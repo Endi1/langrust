@@ -214,8 +214,8 @@ impl VertexGeminiClient {
 
     fn get_endpoint(&self, model: &String, method: String) -> String {
         return format!(
-            "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/us-central1/publishers/google/models/{model}:{method}",
-            self.region, self.project_name
+            "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/google/models/{model}:{method}",
+            self.region, self.project_name, self.region
         );
     }
 
