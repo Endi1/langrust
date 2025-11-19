@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use crate::{
     client::{ChatMessage, Client, CompletionWrapper, LLMCallSettings, Role},
     gemini::gcloud_helpers::get_access_token,
@@ -46,7 +48,13 @@ struct Content {
 }
 
 #[derive(Serialize)]
+struct SystemInstructionContent {
+    parts: Vec<Part>,
+}
+
+#[derive(Serialize)]
 struct GeminiRequest {
+    system_instruction: Option<SystemInstructionContent>,
     contents: Vec<Content>,
     #[serde(rename = "generationConfig")]
     generation_config: GenerationConfig, // TODO implement safetySettings
@@ -104,6 +112,7 @@ pub struct UsageMetadata {
     pub total_token_count: Option<i32>,
 }
 
+#[derive(Debug)]
 struct GeminiCompletion {
     content: Option<String>,
     prompt_tokens: Option<i32>,
@@ -126,10 +135,13 @@ impl CompletionWrapper for GeminiCompletion {
 impl Client for VertexGeminiClient {
     async fn chat_completion(
         &self,
+        system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
-    ) -> Result<Box<dyn CompletionWrapper>, String> {
-        let response = self.generate_content(messages, llm_call_settings).await?;
+    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error>> {
+        let response = self
+            .generate_content(system_message, messages, llm_call_settings)
+            .await?;
         return Ok(Box::new(GeminiCompletion {
             content: response.content,
             completion_tokens: response.completion_tokens,
@@ -142,10 +154,13 @@ impl Client for VertexGeminiClient {
 impl Client for GeminiClient {
     async fn chat_completion(
         &self,
+        system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
-    ) -> Result<Box<dyn CompletionWrapper>, String> {
-        let response = self.generate_content(messages, llm_call_settings).await?;
+    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error>> {
+        let response = self
+            .generate_content(system_message, messages, llm_call_settings)
+            .await?;
         return Ok(Box::new(GeminiCompletion {
             content: response.content,
             completion_tokens: response.completion_tokens,
@@ -157,12 +172,13 @@ impl Client for GeminiClient {
 impl VertexGeminiClient {
     async fn generate_content(
         &self,
+        system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
     ) -> Result<GeminiCompletion, String> {
         let endpoint = self.get_endpoint(&llm_call_settings.model, String::from("generateContent"));
         let access_token = get_access_token().await?;
-        let request_body = self.create_request_body(messages, llm_call_settings);
+        let request_body = self.create_request_body(system_message, messages, llm_call_settings);
         let response = self
             .client
             .post(&endpoint)
@@ -205,6 +221,7 @@ impl VertexGeminiClient {
 
     fn create_request_body(
         &self,
+        system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
     ) -> GeminiRequest {
@@ -224,7 +241,6 @@ impl VertexGeminiClient {
             thinking_config,
         };
 
-        // TODO Fix bug with unsupported system messages
         let contents: Vec<Content> = messages
             .iter()
             .map(|message| Content {
@@ -235,7 +251,12 @@ impl VertexGeminiClient {
             })
             .collect();
 
+        let system_instruction = system_message.clone().map(|m| SystemInstructionContent {
+            parts: vec![Part { text: m }],
+        });
+
         GeminiRequest {
+            system_instruction,
             contents,
             generation_config,
         }
@@ -245,11 +266,12 @@ impl VertexGeminiClient {
 impl GeminiClient {
     async fn generate_content(
         &self,
+        system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
     ) -> Result<GeminiCompletion, String> {
         let endpoint = self.get_endpoint(&llm_call_settings.model, String::from("generateContent"));
-        let request_body = self.create_request_body(messages, llm_call_settings);
+        let request_body = self.create_request_body(system_message, messages, llm_call_settings);
         let response = self
             .client
             .post(&endpoint)
@@ -292,6 +314,7 @@ impl GeminiClient {
 
     fn create_request_body(
         &self,
+        system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
     ) -> GeminiRequest {
@@ -311,7 +334,6 @@ impl GeminiClient {
             thinking_config,
         };
 
-        // TODO Fix bug with unsupported system messages
         let contents: Vec<Content> = messages
             .iter()
             .map(|message| Content {
@@ -322,7 +344,12 @@ impl GeminiClient {
             })
             .collect();
 
+        let system_instruction = system_message.clone().map(|m| SystemInstructionContent {
+            parts: vec![Part { text: m }],
+        });
+
         GeminiRequest {
+            system_instruction,
             contents,
             generation_config,
         }
@@ -354,8 +381,10 @@ mod tests {
             temperature: 0,
             thinking_budget: Some(0),
         };
-        let response = gemini_client.complete(&messages, &call_settings).await;
-        assert!(response.is_some());
+        let response = gemini_client
+            .complete(&None, &messages, &call_settings)
+            .await;
+        assert!(response.is_ok());
 
         let completion = response.expect("No completion found").completion();
         assert!(completion.is_some());
@@ -379,8 +408,12 @@ mod tests {
             temperature: 0,
             thinking_budget: Some(0),
         };
-        let response = gemini_client.complete(&messages, &call_settings).await;
-        assert!(response.is_some());
+        let system_message = Some("you are a helpful assistant".to_string());
+        let response = gemini_client
+            .complete(&system_message, &messages, &call_settings)
+            .await;
+        println!("{:?}", response);
+        assert!(response.is_ok());
 
         let completion = response.expect("No completion found").completion();
         assert!(completion.is_some());
