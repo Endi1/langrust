@@ -6,17 +6,18 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures::TryFutureExt;
+use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
 
 mod gcloud_helpers;
 
-pub struct VertexGeminiClient {
+pub struct GeminiVertexClient {
     region: String,
     project_name: String,
     client: reqwest::Client,
 }
 
-pub struct GeminiClient {
+pub struct GeminiApiClient {
     api_key: String,
     client: reqwest::Client,
 }
@@ -131,60 +132,61 @@ impl CompletionWrapper for GeminiCompletion {
     }
 }
 
-#[async_trait]
-impl Client for VertexGeminiClient {
-    async fn chat_completion(
+trait GeminiClient {
+    fn create_request_body(
         &self,
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
-    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error>> {
-        let response = self
-            .generate_content(system_message, messages, llm_call_settings)
-            .await?;
-        return Ok(Box::new(GeminiCompletion {
-            content: response.content,
-            completion_tokens: response.completion_tokens,
-            prompt_tokens: response.prompt_tokens,
-        }));
-    }
-}
+    ) -> GeminiRequest {
+        let thinking_config = if !llm_call_settings.model.contains("1.5")
+            && !llm_call_settings.model.contains("2.0")
+        {
+            Some(ThinkingConfig {
+                thinking_budget: llm_call_settings.thinking_budget.unwrap_or_default(),
+            })
+        } else {
+            None
+        };
 
-#[async_trait]
-impl Client for GeminiClient {
-    async fn chat_completion(
-        &self,
-        system_message: &Option<String>,
-        messages: &Vec<ChatMessage>,
-        llm_call_settings: &LLMCallSettings,
-    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error>> {
-        let response = self
-            .generate_content(system_message, messages, llm_call_settings)
-            .await?;
-        return Ok(Box::new(GeminiCompletion {
-            content: response.content,
-            completion_tokens: response.completion_tokens,
-            prompt_tokens: response.prompt_tokens,
-        }));
-    }
-}
+        let generation_config = GenerationConfig {
+            max_output_tokens: llm_call_settings.max_tokens.unwrap_or_default(),
+            temperature: llm_call_settings.temperature,
+            thinking_config,
+        };
 
-impl VertexGeminiClient {
+        let contents: Vec<Content> = messages
+            .iter()
+            .map(|message| Content {
+                parts: Vec::from([Part {
+                    text: message.content.clone(),
+                }]),
+                role: message.role.clone().unwrap_or_else(|| Role::User),
+            })
+            .collect();
+
+        let system_instruction = system_message.clone().map(|m| SystemInstructionContent {
+            parts: vec![Part { text: m }],
+        });
+
+        GeminiRequest {
+            system_instruction,
+            contents,
+            generation_config,
+        }
+    }
+
     async fn generate_content(
         &self,
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
-    ) -> Result<GeminiCompletion, String> {
+    ) -> Result<GeminiCompletion, Box<dyn Error + Send + Sync>> {
         let endpoint = self.get_endpoint(&llm_call_settings.model, String::from("generateContent"));
-        let access_token = get_access_token().await?;
         let request_body = self.create_request_body(system_message, messages, llm_call_settings);
         let response = self
-            .client
-            .post(&endpoint)
-            .header("Authorization", format!("Bearer {}", access_token))
-            .header("Content-Type", "application/json")
-            .json(&request_body)
+            .build_request(&endpoint, &request_body)
+            .await?
             .send()
             .map_err(|e| e.to_string())
             .await?;
@@ -195,7 +197,8 @@ impl VertexGeminiClient {
             return Err(format!(
                 "Gemini request failed with status {}: {}",
                 status, error_text
-            ));
+            )
+            .into());
         }
 
         let response_body: GeminiResponse = response.json().map_err(|e| e.to_string()).await?;
@@ -212,6 +215,34 @@ impl VertexGeminiClient {
         });
     }
 
+    fn get_endpoint(&self, model: &String, method: String) -> String;
+    async fn build_request(
+        &self,
+        endpoint: &String,
+        request_body: &GeminiRequest,
+    ) -> Result<RequestBuilder, Box<dyn Error + Send + Sync>>;
+}
+
+#[async_trait]
+impl Client for GeminiVertexClient {
+    async fn chat_completion(
+        &self,
+        system_message: &Option<String>,
+        messages: &Vec<ChatMessage>,
+        llm_call_settings: &LLMCallSettings,
+    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error + Send + Sync>> {
+        let response = self
+            .generate_content(system_message, messages, llm_call_settings)
+            .await?;
+        return Ok(Box::new(GeminiCompletion {
+            content: response.content,
+            completion_tokens: response.completion_tokens,
+            prompt_tokens: response.prompt_tokens,
+        }));
+    }
+}
+
+impl GeminiClient for GeminiVertexClient {
     fn get_endpoint(&self, model: &String, method: String) -> String {
         return format!(
             "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/google/models/{model}:{method}",
@@ -219,92 +250,41 @@ impl VertexGeminiClient {
         );
     }
 
-    fn create_request_body(
+    async fn build_request(
         &self,
-        system_message: &Option<String>,
-        messages: &Vec<ChatMessage>,
-        llm_call_settings: &LLMCallSettings,
-    ) -> GeminiRequest {
-        let thinking_config = if !llm_call_settings.model.contains("1.5")
-            && !llm_call_settings.model.contains("2.0")
-        {
-            Some(ThinkingConfig {
-                thinking_budget: llm_call_settings.thinking_budget.unwrap_or_default(),
-            })
-        } else {
-            None
-        };
-
-        let generation_config = GenerationConfig {
-            max_output_tokens: llm_call_settings.max_tokens.unwrap_or_default(),
-            temperature: llm_call_settings.temperature,
-            thinking_config,
-        };
-
-        let contents: Vec<Content> = messages
-            .iter()
-            .map(|message| Content {
-                parts: Vec::from([Part {
-                    text: message.content.clone(),
-                }]),
-                role: message.role.clone().unwrap_or_else(|| Role::User),
-            })
-            .collect();
-
-        let system_instruction = system_message.clone().map(|m| SystemInstructionContent {
-            parts: vec![Part { text: m }],
-        });
-
-        GeminiRequest {
-            system_instruction,
-            contents,
-            generation_config,
-        }
+        endpoint: &String,
+        request_body: &GeminiRequest,
+    ) -> Result<RequestBuilder, Box<dyn Error + Send + Sync>> {
+        let access_token = get_access_token().await?;
+        return Ok(self
+            .client
+            .post(endpoint)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Content-Type", "application/json")
+            .json(request_body));
     }
 }
 
-impl GeminiClient {
-    async fn generate_content(
+#[async_trait]
+impl Client for GeminiApiClient {
+    async fn chat_completion(
         &self,
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
-    ) -> Result<GeminiCompletion, String> {
-        let endpoint = self.get_endpoint(&llm_call_settings.model, String::from("generateContent"));
-        let request_body = self.create_request_body(system_message, messages, llm_call_settings);
+    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error + Send + Sync>> {
         let response = self
-            .client
-            .post(&endpoint)
-            .header("x-goog-api-key", self.api_key.clone())
-            .header("Content-Type", "application/json")
-            .json(&request_body)
-            .send()
-            .map_err(|e| e.to_string())
+            .generate_content(system_message, messages, llm_call_settings)
             .await?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response.text().map_err(|e| e.to_string()).await?;
-            return Err(format!(
-                "Gemini request failed with status {}: {}",
-                status, error_text
-            ));
-        }
-
-        let response_body: GeminiResponse = response.json().map_err(|e| e.to_string()).await?;
-        return Ok(GeminiCompletion {
-            content: response_body.get_text(),
-            prompt_tokens: response_body
-                .usage_metadata
-                .as_ref()
-                .and_then(|m| m.candidates_token_count),
-            completion_tokens: response_body
-                .usage_metadata
-                .as_ref()
-                .and_then(|m| m.candidates_token_count),
-        });
+        return Ok(Box::new(GeminiCompletion {
+            content: response.content,
+            completion_tokens: response.completion_tokens,
+            prompt_tokens: response.prompt_tokens,
+        }));
     }
+}
 
+impl GeminiClient for GeminiApiClient {
     fn get_endpoint(&self, model: &String, method: String) -> String {
         return format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:{}",
@@ -312,47 +292,17 @@ impl GeminiClient {
         );
     }
 
-    fn create_request_body(
+    async fn build_request(
         &self,
-        system_message: &Option<String>,
-        messages: &Vec<ChatMessage>,
-        llm_call_settings: &LLMCallSettings,
-    ) -> GeminiRequest {
-        let thinking_config = if !llm_call_settings.model.contains("1.5")
-            && !llm_call_settings.model.contains("2.0")
-        {
-            Some(ThinkingConfig {
-                thinking_budget: llm_call_settings.thinking_budget.unwrap_or_default(),
-            })
-        } else {
-            None
-        };
-
-        let generation_config = GenerationConfig {
-            max_output_tokens: llm_call_settings.max_tokens.unwrap_or_default(),
-            temperature: llm_call_settings.temperature,
-            thinking_config,
-        };
-
-        let contents: Vec<Content> = messages
-            .iter()
-            .map(|message| Content {
-                parts: Vec::from([Part {
-                    text: message.content.clone(),
-                }]),
-                role: message.role.clone().unwrap_or_else(|| Role::User),
-            })
-            .collect();
-
-        let system_instruction = system_message.clone().map(|m| SystemInstructionContent {
-            parts: vec![Part { text: m }],
-        });
-
-        GeminiRequest {
-            system_instruction,
-            contents,
-            generation_config,
-        }
+        endpoint: &String,
+        request_body: &GeminiRequest,
+    ) -> Result<RequestBuilder, Box<dyn Error + Send + Sync>> {
+        return Ok(self
+            .client
+            .post(endpoint.clone())
+            .header("x-goog-api-key", self.api_key.clone())
+            .header("Content-Type", "application/json")
+            .json(request_body));
     }
 }
 
@@ -364,7 +314,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_content_vertex() {
-        let gemini_client = VertexGeminiClient {
+        let gemini_client = GeminiVertexClient {
             region: env::var("VERTEX_REGION").unwrap(),
             project_name: env::var("VERTEX_PROJECT").unwrap(),
             client: reqwest::Client::new(),
@@ -392,7 +342,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_content_direct() {
-        let gemini_client = GeminiClient {
+        let gemini_client = GeminiApiClient {
             client: reqwest::Client::new(),
             api_key: env::var("GEMINI_KEY").unwrap(),
         };

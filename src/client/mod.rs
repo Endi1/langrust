@@ -72,7 +72,7 @@ pub trait Client {
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
-    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error>> {
+    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error + Send + Sync>> {
         // TODO Add logging/tracing etc
 
         let response = self
@@ -86,5 +86,5 @@ pub trait Client {
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &LLMCallSettings,
-    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error>>;
+    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error + Send + Sync>>;
 }
