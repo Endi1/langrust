@@ -44,7 +44,7 @@ pub struct ChatMessage {
     pub role: Option<Role>,
 }
 
-pub struct LLMCallSettings {
+pub struct Settings {
     pub model: String,
     pub max_tokens: Option<i16>,
     pub timeout: Option<i16>,
@@ -55,14 +55,14 @@ pub struct LLMCallSettings {
 pub trait StreamWrapper<T>: Stream<Item = Option<String>> + Send + Unpin {
     fn new(
         messages: Vec<ChatMessage>,
-        llm_call_settings: LLMCallSettings,
+        llm_call_settings: Settings,
         caller_id: String,
         stream: Box<dyn Stream<Item = Option<T>> + Send + Unpin>,
     ) -> Self
     where
         Self: Sized;
 
-    fn llm_call_settings(&self) -> &LLMCallSettings;
+    fn llm_call_settings(&self) -> &Settings;
 }
 
 #[async_trait]
@@ -71,7 +71,7 @@ pub trait Client {
         &self,
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
-        llm_call_settings: &LLMCallSettings,
+        llm_call_settings: &Settings,
     ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error + Send + Sync>> {
         // TODO Add logging/tracing etc
 
@@ -85,6 +85,6 @@ pub trait Client {
         &self,
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
-        llm_call_settings: &LLMCallSettings,
+        llm_call_settings: &Settings,
     ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error + Send + Sync>>;
 }

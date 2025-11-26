@@ -1,7 +1,7 @@
 use std::env;
 
 use crate::{
-    client::{ChatMessage, Client, LLMCallSettings, Role},
+    client::{ChatMessage, Client, Settings, Role},
     gemini::{direct_api_client::GeminiApiClient, vertex_client::GeminiVertexClient},
 };
 
@@ -17,7 +17,7 @@ async fn test_generate_content_vertex() {
         role: Some(Role::User),
     }]
     .to_vec();
-    let call_settings = LLMCallSettings {
+    let call_settings = Settings {
         model: "gemini-2.5-flash".to_string(),
         max_tokens: Some(8000),
         timeout: None,
@@ -44,7 +44,7 @@ async fn test_generate_content_direct() {
         role: Some(Role::User),
     }]
     .to_vec();
-    let call_settings = LLMCallSettings {
+    let call_settings = Settings {
         model: "gemini-2.5-flash".to_string(),
         max_tokens: Some(8000),
         timeout: None,

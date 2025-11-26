@@ -4,7 +4,7 @@ use std::error::Error;
 use reqwest::RequestBuilder;
 
 use crate::{
-    client::{ChatMessage, LLMCallSettings, Role},
+    client::{ChatMessage, Settings, Role},
     gemini::types::{
         Content, GeminiCompletion, GeminiRequest, GeminiResponse, GenerationConfig, Part,
         SystemInstructionContent, ThinkingConfig,
@@ -16,7 +16,7 @@ pub trait GeminiClient {
         &self,
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
-        llm_call_settings: &LLMCallSettings,
+        llm_call_settings: &Settings,
     ) -> GeminiRequest {
         let thinking_config = if !llm_call_settings.model.contains("1.5")
             && !llm_call_settings.model.contains("2.0")
@@ -59,7 +59,7 @@ pub trait GeminiClient {
         &self,
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
-        llm_call_settings: &LLMCallSettings,
+        llm_call_settings: &Settings,
     ) -> Result<GeminiCompletion, Box<dyn Error + Send + Sync>> {
         let endpoint = self.get_endpoint(&llm_call_settings.model, String::from("generateContent"));
         let request_body = self.create_request_body(system_message, messages, llm_call_settings);

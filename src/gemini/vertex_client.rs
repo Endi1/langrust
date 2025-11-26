@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::{
-    client::{ChatMessage, Client, CompletionWrapper, LLMCallSettings},
+    client::{ChatMessage, Client, CompletionWrapper, Settings},
     gemini::{
         base::GeminiClient,
         gcloud_helpers::get_access_token,
@@ -23,7 +23,7 @@ impl Client for GeminiVertexClient {
         &self,
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
-        llm_call_settings: &LLMCallSettings,
+        llm_call_settings: &Settings,
     ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error + Send + Sync>> {
         let response = self
             .generate_content(system_message, messages, llm_call_settings)
