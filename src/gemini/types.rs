@@ -33,7 +33,7 @@ pub struct SystemInstructionContent {
 }
 
 #[derive(Serialize)]
-pub struct GeminiRequest {
+pub struct Request {
     pub system_instruction: Option<SystemInstructionContent>,
     pub contents: Vec<Content>,
     #[serde(rename = "generationConfig")]

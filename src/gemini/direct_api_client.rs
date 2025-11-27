@@ -5,7 +5,7 @@ use crate::{
     gemini::{
         base::GeminiClient,
         gcloud_helpers::get_access_token,
-        types::{GeminiCompletion, GeminiRequest},
+        types::{GeminiCompletion, Request},
     },
 };
 use async_trait::async_trait;
@@ -46,7 +46,7 @@ impl GeminiClient for GeminiApiClient {
     async fn build_request(
         &self,
         endpoint: &String,
-        request_body: &GeminiRequest,
+        request_body: &Request,
     ) -> Result<RequestBuilder, Box<dyn Error + Send + Sync>> {
         return Ok(self
             .client

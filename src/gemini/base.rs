@@ -6,7 +6,7 @@ use reqwest::RequestBuilder;
 use crate::{
     client::{ChatMessage, Settings, Role},
     gemini::types::{
-        Content, GeminiCompletion, GeminiRequest, GeminiResponse, GenerationConfig, Part,
+        Content, GeminiCompletion, Request, GeminiResponse, GenerationConfig, Part,
         SystemInstructionContent, ThinkingConfig,
     },
 };
@@ -17,7 +17,7 @@ pub trait GeminiClient {
         system_message: &Option<String>,
         messages: &Vec<ChatMessage>,
         llm_call_settings: &Settings,
-    ) -> GeminiRequest {
+    ) -> Request {
         let thinking_config = if !llm_call_settings.model.contains("1.5")
             && !llm_call_settings.model.contains("2.0")
         {
@@ -48,7 +48,7 @@ pub trait GeminiClient {
             parts: vec![Part { text: m }],
         });
 
-        GeminiRequest {
+        Request {
             system_instruction,
             contents,
             generation_config,
@@ -98,6 +98,6 @@ pub trait GeminiClient {
     async fn build_request(
         &self,
         endpoint: &String,
-        request_body: &GeminiRequest,
+        request_body: &Request,
     ) -> Result<RequestBuilder, Box<dyn Error + Send + Sync>>;
 }
