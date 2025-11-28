@@ -4,9 +4,9 @@ use std::error::Error;
 use reqwest::RequestBuilder;
 
 use crate::{
-    client::{ChatMessage, Settings, Role},
+    client::{ChatMessage, Role, Settings},
     gemini::types::{
-        Content, GeminiCompletion, Request, GeminiResponse, GenerationConfig, Part,
+        Content, GeminiCompletion, GeminiResponse, GenerationConfig, Part, Request,
         SystemInstructionContent, ThinkingConfig,
     },
 };
@@ -39,19 +39,25 @@ pub trait GeminiClient {
             .map(|message| Content {
                 parts: Vec::from([Part {
                     text: message.content.clone(),
+                    function_call: None,
                 }]),
                 role: message.role.clone().unwrap_or_else(|| Role::User),
             })
             .collect();
 
         let system_instruction = system_message.clone().map(|m| SystemInstructionContent {
-            parts: vec![Part { text: m }],
+            parts: vec![Part {
+                text: m,
+                function_call: None,
+            }],
         });
 
         Request {
             system_instruction,
             contents,
             generation_config,
+            tools: None,
+            tool_config: None,
         }
     }
 
