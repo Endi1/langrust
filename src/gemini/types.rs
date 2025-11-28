@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::client::{CompletionWrapper, Role};
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +21,15 @@ pub struct GenerationConfig {
 #[derive(Serialize)]
 pub struct Part {
     pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "functionCall")]
+    pub function_call: Option<FunctionCall>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FunctionCall {
+    pub id: String,
+    pub name: String,
+    pub args: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -37,8 +48,77 @@ pub struct Request {
     pub system_instruction: Option<SystemInstructionContent>,
     pub contents: Vec<Content>,
     #[serde(rename = "generationConfig")]
-    pub generation_config: GenerationConfig, // TODO implement safetySettings
-                                             // TODO implement image stuff
+    pub generation_config: GenerationConfig,
+    // TODO implement safetySettings
+    // TODO implement image stuff
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<Tool>>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "toolConfig")]
+    pub tool_config: Option<ToolConfig>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tool {
+    pub function_declarations: Vec<FunctionDeclaration>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolConfig {
+    pub function_calling_config: FunctionCallingConfig,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FunctionCallingConfig {
+    pub mode: Mode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_function_names: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Mode {
+    /// Default model behavior, model decides to predict either a function call or a natural language response.
+    Auto,
+    /// Model is constrained to always predicting a function call only.
+    Any,
+    /// Model will not predict any function call.
+    None,
+    /// Model decides to predict either a function call or a natural language response, but will validate
+    /// function calls with constrained decoding.
+    Validated,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FunctionDeclaration {
+    pub name: String,
+    pub description: String,
+    pub parameters: Parameters,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Parameters {
+    #[serde(rename = "type")]
+    pub param_type: String,
+    pub properties: HashMap<String, Property>,
+    pub required: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Property {
+    #[serde(rename = "type")]
+    pub _type: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Items>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Items {
+    #[serde(rename = "type")]
+    pub item_type: String,
 }
 
 #[derive(Debug, Deserialize)]
