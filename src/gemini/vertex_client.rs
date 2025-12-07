@@ -2,7 +2,11 @@ use std::error::Error;
 
 use crate::{
     client::{Completion, Model, ModelRequest},
-    gemini::{base::GeminiClient, gcloud_helpers::get_access_token, types::GeminiRequest},
+    gemini::{
+        base::GeminiClient,
+        gcloud_helpers::get_access_token,
+        types::{GeminiModel, GeminiRequest},
+    },
 };
 use async_trait::async_trait;
 use reqwest::RequestBuilder;
@@ -11,7 +15,7 @@ pub struct GeminiVertexModel {
     pub region: String,
     pub project_name: String,
     pub client: reqwest::Client,
-    pub model: String,
+    pub model: GeminiModel,
 }
 
 #[async_trait]
@@ -30,8 +34,8 @@ impl Model for GeminiVertexModel {
 }
 
 impl GeminiClient for GeminiVertexModel {
-    fn model(&self) -> &String {
-        &self.model
+    fn model(&self) -> String {
+        self.model.to_string()
     }
 
     fn get_endpoint(&self, model: &String, method: String) -> String {

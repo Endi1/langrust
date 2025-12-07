@@ -2,15 +2,19 @@ use std::error::Error;
 
 use crate::{
     client::{Completion, Model, ModelRequest},
-    gemini::{base::GeminiClient, types::GeminiRequest},
+    gemini::{
+        base::GeminiClient,
+        types::{GeminiModel, GeminiRequest},
+    },
 };
 use async_trait::async_trait;
 use reqwest::RequestBuilder;
+use serde::Serialize;
 
 pub struct GeminiApiModel {
     pub api_key: String,
     pub client: reqwest::Client,
-    pub model: String, // TODO Replace this with a type
+    pub model: GeminiModel, // TODO Replace this with a type
 }
 
 #[async_trait]
@@ -29,8 +33,8 @@ impl Model for GeminiApiModel {
 }
 
 impl GeminiClient for GeminiApiModel {
-    fn model(&self) -> &String {
-        &self.model
+    fn model(&self) -> String {
+        self.model.to_string()
     }
     fn get_endpoint(&self, model: &String, method: String) -> String {
         return format!(

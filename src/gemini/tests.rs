@@ -2,7 +2,9 @@ use std::env;
 
 use crate::{
     client::{Message, Model, Role, Settings},
-    gemini::{direct_api_client::GeminiApiModel, vertex_client::GeminiVertexModel},
+    gemini::{
+        direct_api_client::GeminiApiModel, types::GeminiModel, vertex_client::GeminiVertexModel,
+    },
 };
 
 #[tokio::test]
@@ -11,7 +13,7 @@ async fn test_generate_content_vertex() {
         region: env::var("VERTEX_REGION").unwrap(),
         project_name: env::var("VERTEX_PROJECT").unwrap(),
         client: reqwest::Client::new(),
-        model: "gemini-2.5-flash".to_string(),
+        model: GeminiModel::Gemini25Flash,
     };
 
     let response = model
@@ -30,7 +32,7 @@ async fn test_generate_content_direct() {
     let model = GeminiApiModel {
         client: reqwest::Client::new(),
         api_key: env::var("GEMINI_KEY").unwrap(),
-        model: "gemini-2.5-flash".to_string(),
+        model: GeminiModel::Gemini25Flash,
     };
     let response = model
         .new_request()

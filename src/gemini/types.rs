@@ -1,6 +1,19 @@
 use crate::client::Role;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GeminiModel {
+    Gemini25Flash,
+}
+
+impl GeminiModel {
+    pub fn to_string(&self) -> String {
+        match self {
+            GeminiModel::Gemini25Flash => "gemini-2.5-flash".to_string(),
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct ThinkingConfig {
     #[serde(rename = "thinkingBudget")]

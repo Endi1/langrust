@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub trait GeminiClient {
-    fn model(&self) -> &String;
+    fn model(&self) -> String;
     fn create_request_body(&self, request: ModelRequest) -> GeminiRequest {
         let thinking_config = if !self.model().contains("1.5") && !self.model().contains("2.0") {
             Some(ThinkingConfig {
