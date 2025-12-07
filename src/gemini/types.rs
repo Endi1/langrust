@@ -1,5 +1,8 @@
-use crate::client::Role;
+use std::collections::HashMap;
+
+use crate::client::{Role, Tool};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GeminiModel {
@@ -46,12 +49,19 @@ pub struct SystemInstructionContent {
 }
 
 #[derive(Serialize)]
+pub struct GeminiTool {
+    #[serde(rename = "functionDeclarations")]
+    pub function_declarations: Vec<Tool>,
+}
+
+#[derive(Serialize)]
 pub struct GeminiRequest {
     pub system_instruction: Option<SystemInstructionContent>,
     pub contents: Vec<Content>,
     #[serde(rename = "generationConfig")]
     pub generation_config: GenerationConfig, // TODO implement safetySettings
-                                             // TODO implement image stuff
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<GeminiTool>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,6 +72,21 @@ pub struct GeminiResponse {
 }
 
 impl GeminiResponse {
+    pub fn get_function(&self) -> Option<GeminiFunction> {
+        if self.candidates.is_empty() {
+            return None;
+        }
+
+        let candidate = &self.candidates[0];
+        let mut function_call: Option<GeminiFunction> = None;
+        for part in &candidate.content.parts {
+            if part.function_call.is_some() {
+                function_call = part.function_call.clone();
+            }
+        }
+        return function_call;
+    }
+
     pub fn get_text(&self) -> Option<String> {
         if self.candidates.is_empty() {
             return None;
@@ -70,7 +95,10 @@ impl GeminiResponse {
         let mut response_text = String::new();
         let candidate = &self.candidates[0];
         for part in &candidate.content.parts {
-            response_text.push_str(&part.text);
+            match &part.text {
+                None => continue,
+                Some(t) => response_text.push_str(&t),
+            }
         }
         return Some(response_text);
     }
@@ -102,9 +130,17 @@ pub struct ResponseContent {
     pub role: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct GeminiFunction {
+    pub name: String,
+    pub args: HashMap<String, Value>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ResponsePart {
-    pub text: String,
+    pub text: Option<String>,
+    #[serde(rename = "functionCall")]
+    pub function_call: Option<GeminiFunction>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,11 +151,4 @@ pub struct UsageMetadata {
     pub candidates_token_count: Option<i32>,
     #[serde(rename = "totalTokenCount")]
     pub total_token_count: Option<i32>,
-}
-
-#[derive(Debug)]
-pub struct GeminiCompletion {
-    pub content: String,
-    pub prompt_tokens: i32,
-    pub completion_tokens: i32,
 }

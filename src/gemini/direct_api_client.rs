@@ -9,7 +9,6 @@ use crate::{
 };
 use async_trait::async_trait;
 use reqwest::RequestBuilder;
-use serde::Serialize;
 
 pub struct GeminiApiModel {
     pub api_key: String,
@@ -28,6 +27,7 @@ impl Model for GeminiApiModel {
             completion: response.completion,
             completion_tokens: response.completion_tokens,
             prompt_tokens: response.prompt_tokens,
+            function: response.function,
         });
     }
 }

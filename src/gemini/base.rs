@@ -4,10 +4,10 @@ use std::error::Error;
 use reqwest::RequestBuilder;
 
 use crate::{
-    client::{Completion, ModelRequest, Role},
+    client::{Completion, FunctionCall, ModelRequest, Role},
     gemini::types::{
-        Content, GeminiRequest, GeminiResponse, GenerationConfig, Part, SystemInstructionContent,
-        ThinkingConfig,
+        Content, GeminiRequest, GeminiResponse, GeminiTool, GenerationConfig, Part,
+        SystemInstructionContent, ThinkingConfig,
     },
 };
 
@@ -57,6 +57,11 @@ pub trait GeminiClient {
             system_instruction,
             contents,
             generation_config,
+            tools: request.tools.clone().map(|ts| {
+                vec![GeminiTool {
+                    function_declarations: ts,
+                }]
+            }),
         }
     }
 
@@ -70,7 +75,6 @@ pub trait GeminiClient {
             .build_request(&endpoint, &request_body)
             .await?
             .send()
-            .map_err(|e| e.to_string())
             .await?;
 
         let status = response.status();
@@ -83,6 +87,8 @@ pub trait GeminiClient {
             .into());
         }
 
+        // println!("here: {:?}", response.text().await?);
+        // return Err("Gemini request failed with status".into());
         let response_body: GeminiResponse = response.json().map_err(|e| e.to_string()).await?;
 
         let content: String =
@@ -107,6 +113,10 @@ pub trait GeminiClient {
             completion: content,
             prompt_tokens,
             completion_tokens,
+            function: response_body.get_function().map(|gf| FunctionCall {
+                name: gf.name,
+                args: gf.args,
+            }),
         });
     }
 

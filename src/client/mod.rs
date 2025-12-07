@@ -1,13 +1,21 @@
-use std::error::Error;
+use serde_json::{self, Value};
+use std::{collections::HashMap, error::Error};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FunctionCall {
+    pub name: String,
+    pub args: HashMap<String, Value>,
+}
 
 #[derive(Debug)]
 pub struct Completion {
     pub completion: String,
     pub prompt_tokens: i32,
     pub completion_tokens: i32,
+    pub function: Option<FunctionCall>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,12 +55,28 @@ pub struct Settings {
     pub thinking_budget: Option<i16>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolParameters {
+    #[serde(rename = "type")]
+    pub _type: String,
+    pub properties: HashMap<String, Value>, // TODO Eventually improve the typing here
+    pub required: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tool {
+    pub name: String,
+    pub description: String,
+    pub parameters: ToolParameters,
+}
+
 #[derive(Clone)]
 pub struct ModelRequestBuilder<'a> {
     pub model: &'a dyn Model,
     pub system: Option<String>,
     pub messages: Option<Vec<Message>>,
     pub settings: Option<Settings>,
+    pub tools: Option<Vec<Tool>>,
 }
 
 unsafe impl<'a> Sync for ModelRequestBuilder<'a> {}
@@ -62,6 +86,7 @@ pub struct ModelRequest {
     pub system: Option<String>,
     pub messages: Option<Vec<Message>>,
     pub settings: Option<Settings>,
+    pub tools: Option<Vec<Tool>>,
 }
 
 impl<'a> ModelRequestBuilder<'a> {
@@ -71,6 +96,7 @@ impl<'a> ModelRequestBuilder<'a> {
             system: None,
             messages: None,
             settings: None,
+            tools: None,
         }
     }
 
@@ -104,6 +130,26 @@ impl<'a> ModelRequestBuilder<'a> {
         return self;
     }
 
+    pub fn with_tool(&mut self, tool: Tool) -> &mut Self {
+        match self.tools {
+            None => self.tools = Some(vec![tool]),
+            Some(_) => {
+                self.tools.clone().map(|mut ts| ts.push(tool));
+            }
+        }
+        return self;
+    }
+
+    pub fn with_tools(&mut self, tools: Vec<Tool>) -> &mut Self {
+        match self.tools {
+            None => self.tools = Some(tools),
+            Some(_) => {
+                self.tools.clone().map(|mut ts| ts.extend(tools));
+            }
+        }
+        return self;
+    }
+
     pub async fn completion(&self) -> Result<Completion, Box<dyn Error + Send + Sync>> {
         self.model.completion(self.to_model_request()).await
     }
@@ -113,6 +159,7 @@ impl<'a> ModelRequestBuilder<'a> {
             system: self.system.clone(),
             messages: self.messages.clone(),
             settings: self.settings.clone(),
+            tools: self.tools.clone(),
         }
     }
 }

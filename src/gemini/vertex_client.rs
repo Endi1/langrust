@@ -29,6 +29,7 @@ impl Model for GeminiVertexModel {
             completion: response.completion,
             completion_tokens: response.completion_tokens,
             prompt_tokens: response.prompt_tokens,
+            function: response.function,
         });
     }
 }
