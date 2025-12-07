@@ -1,41 +1,37 @@
 use std::error::Error;
 
 use crate::{
-    client::{ChatMessage, Client, CompletionWrapper, Settings, Role},
-    gemini::{
-        base::GeminiClient,
-        gcloud_helpers::get_access_token,
-        types::{GeminiCompletion, GeminiRequest},
-    },
+    client::{Completion, Model, ModelRequest},
+    gemini::{base::GeminiClient, types::GeminiRequest},
 };
 use async_trait::async_trait;
 use reqwest::RequestBuilder;
 
-pub struct GeminiApiClient {
+pub struct GeminiApiModel {
     pub api_key: String,
     pub client: reqwest::Client,
+    pub model: String, // TODO Replace this with a type
 }
 
 #[async_trait]
-impl Client for GeminiApiClient {
-    async fn chat_completion(
+impl Model for GeminiApiModel {
+    async fn completion(
         &self,
-        system_message: &Option<String>,
-        messages: &Vec<ChatMessage>,
-        llm_call_settings: &Settings,
-    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error + Send + Sync>> {
-        let response = self
-            .generate_content(system_message, messages, llm_call_settings)
-            .await?;
-        return Ok(Box::new(GeminiCompletion {
-            content: response.content,
+        request: ModelRequest,
+    ) -> Result<Completion, Box<dyn Error + Send + Sync>> {
+        let response = self.generate_content(request).await?;
+        return Ok(Completion {
+            completion: response.completion,
             completion_tokens: response.completion_tokens,
             prompt_tokens: response.prompt_tokens,
-        }));
+        });
     }
 }
 
-impl GeminiClient for GeminiApiClient {
+impl GeminiClient for GeminiApiModel {
+    fn model(&self) -> &String {
+        &self.model
+    }
     fn get_endpoint(&self, model: &String, method: String) -> String {
         return format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:{}",

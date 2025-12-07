@@ -1,4 +1,4 @@
-use crate::client::{CompletionWrapper, Role};
+use crate::client::Role;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -9,8 +9,8 @@ pub struct ThinkingConfig {
 
 #[derive(Serialize)]
 pub struct GenerationConfig {
-    #[serde(rename = "maxOutputTokens")]
-    pub max_output_tokens: i16,
+    #[serde(rename = "maxOutputTokens", skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i16>,
     pub temperature: i16,
     #[serde(rename = "thinkingConfig", skip_serializing_if = "Option::is_none")]
     pub thinking_config: Option<ThinkingConfig>,
@@ -61,6 +61,18 @@ impl GeminiResponse {
         }
         return Some(response_text);
     }
+
+    pub fn get_prompt_tokens(&self) -> Option<i32> {
+        self.usage_metadata
+            .as_ref()
+            .and_then(|m| m.prompt_token_count)
+    }
+
+    pub fn get_completion_tokens(&self) -> Option<i32> {
+        self.usage_metadata
+            .as_ref()
+            .and_then(|m| m.candidates_token_count)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,19 +106,7 @@ pub struct UsageMetadata {
 
 #[derive(Debug)]
 pub struct GeminiCompletion {
-    pub content: Option<String>,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
-}
-
-impl CompletionWrapper for GeminiCompletion {
-    fn completion(&self) -> Option<String> {
-        self.content.clone()
-    }
-    fn prompt_tokens(&self) -> Option<i32> {
-        self.prompt_tokens
-    }
-    fn completion_tokens(&self) -> Option<i32> {
-        self.completion_tokens
-    }
+    pub content: String,
+    pub prompt_tokens: i32,
+    pub completion_tokens: i32,
 }

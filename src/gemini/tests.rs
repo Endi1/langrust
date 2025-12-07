@@ -1,63 +1,51 @@
 use std::env;
 
 use crate::{
-    client::{ChatMessage, Client, Settings, Role},
-    gemini::{direct_api_client::GeminiApiClient, vertex_client::GeminiVertexClient},
+    client::{Message, Model, Role, Settings},
+    gemini::{direct_api_client::GeminiApiModel, vertex_client::GeminiVertexModel},
 };
 
 #[tokio::test]
 async fn test_generate_content_vertex() {
-    let gemini_client = GeminiVertexClient {
+    let model = GeminiVertexModel {
         region: env::var("VERTEX_REGION").unwrap(),
         project_name: env::var("VERTEX_PROJECT").unwrap(),
         client: reqwest::Client::new(),
-    };
-    let messages = [ChatMessage {
-        content: "hello how are you?".to_string(),
-        role: Some(Role::User),
-    }]
-    .to_vec();
-    let call_settings = Settings {
         model: "gemini-2.5-flash".to_string(),
-        max_tokens: Some(8000),
-        timeout: None,
-        temperature: 0,
-        thinking_budget: Some(0),
     };
-    let response = gemini_client
-        .complete(&None, &messages, &call_settings)
+
+    let response = model
+        .new_request()
+        .with_message(Message {
+            content: "hello how are you?".to_string(),
+            role: Some(Role::User),
+        })
+        .completion()
         .await;
     assert!(response.is_ok());
-
-    let completion = response.expect("No completion found").completion();
-    assert!(completion.is_some());
 }
 
 #[tokio::test]
 async fn test_generate_content_direct() {
-    let gemini_client = GeminiApiClient {
+    let model = GeminiApiModel {
         client: reqwest::Client::new(),
         api_key: env::var("GEMINI_KEY").unwrap(),
-    };
-    let messages = [ChatMessage {
-        content: "hello how are you?".to_string(),
-        role: Some(Role::User),
-    }]
-    .to_vec();
-    let call_settings = Settings {
         model: "gemini-2.5-flash".to_string(),
-        max_tokens: Some(8000),
-        timeout: None,
-        temperature: 0,
-        thinking_budget: Some(0),
     };
-    let system_message = Some("you are a helpful assistant".to_string());
-    let response = gemini_client
-        .complete(&system_message, &messages, &call_settings)
+    let response = model
+        .new_request()
+        .with_system("you are a helpful assistant".to_string())
+        .with_message(Message {
+            content: "hello, how are you?".to_string(),
+            role: Some(Role::User),
+        })
+        .with_settings(Settings {
+            max_tokens: Some(8000),
+            timeout: None,
+            temperature: None,
+            thinking_budget: None,
+        })
+        .completion()
         .await;
-    println!("{:?}", response);
     assert!(response.is_ok());
-
-    let completion = response.expect("No completion found").completion();
-    assert!(completion.is_some());
 }

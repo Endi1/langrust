@@ -4,37 +4,42 @@ use std::error::Error;
 use reqwest::RequestBuilder;
 
 use crate::{
-    client::{ChatMessage, Settings, Role},
+    client::{Completion, ModelRequest, Role},
     gemini::types::{
-        Content, GeminiCompletion, GeminiRequest, GeminiResponse, GenerationConfig, Part,
-        SystemInstructionContent, ThinkingConfig,
+        Content, GeminiRequest, GeminiResponse, GenerationConfig, Part, SystemInstructionContent,
+        ThinkingConfig,
     },
 };
 
 pub trait GeminiClient {
-    fn create_request_body(
-        &self,
-        system_message: &Option<String>,
-        messages: &Vec<ChatMessage>,
-        llm_call_settings: &Settings,
-    ) -> GeminiRequest {
-        let thinking_config = if !llm_call_settings.model.contains("1.5")
-            && !llm_call_settings.model.contains("2.0")
-        {
+    fn model(&self) -> &String;
+    fn create_request_body(&self, request: ModelRequest) -> GeminiRequest {
+        let thinking_config = if !self.model().contains("1.5") && !self.model().contains("2.0") {
             Some(ThinkingConfig {
-                thinking_budget: llm_call_settings.thinking_budget.unwrap_or_default(),
+                thinking_budget: request
+                    .settings
+                    .clone()
+                    .map(|s| s.thinking_budget.unwrap_or_default())
+                    .unwrap_or_default(),
             })
         } else {
             None
         };
 
         let generation_config = GenerationConfig {
-            max_output_tokens: llm_call_settings.max_tokens.unwrap_or_default(),
-            temperature: llm_call_settings.temperature,
+            max_output_tokens: request.settings.clone().and_then(|s| s.max_tokens),
+            temperature: request
+                .settings
+                .clone()
+                .map(|s| s.temperature.unwrap_or_default())
+                .unwrap_or_default(),
             thinking_config,
         };
 
-        let contents: Vec<Content> = messages
+        let contents: Vec<Content> = request
+            .messages
+            .clone()
+            .unwrap_or(vec![])
             .iter()
             .map(|message| Content {
                 parts: Vec::from([Part {
@@ -44,7 +49,7 @@ pub trait GeminiClient {
             })
             .collect();
 
-        let system_instruction = system_message.clone().map(|m| SystemInstructionContent {
+        let system_instruction = request.system.clone().map(|m| SystemInstructionContent {
             parts: vec![Part { text: m }],
         });
 
@@ -57,12 +62,10 @@ pub trait GeminiClient {
 
     async fn generate_content(
         &self,
-        system_message: &Option<String>,
-        messages: &Vec<ChatMessage>,
-        llm_call_settings: &Settings,
-    ) -> Result<GeminiCompletion, Box<dyn Error + Send + Sync>> {
-        let endpoint = self.get_endpoint(&llm_call_settings.model, String::from("generateContent"));
-        let request_body = self.create_request_body(system_message, messages, llm_call_settings);
+        request: ModelRequest,
+    ) -> Result<Completion, Box<dyn Error + Send + Sync>> {
+        let endpoint = self.get_endpoint(&self.model(), String::from("generateContent"));
+        let request_body = self.create_request_body(request);
         let response = self
             .build_request(&endpoint, &request_body)
             .await?
@@ -81,16 +84,29 @@ pub trait GeminiClient {
         }
 
         let response_body: GeminiResponse = response.json().map_err(|e| e.to_string()).await?;
-        return Ok(GeminiCompletion {
-            content: response_body.get_text(),
-            prompt_tokens: response_body
-                .usage_metadata
-                .as_ref()
-                .and_then(|m| m.candidates_token_count),
-            completion_tokens: response_body
-                .usage_metadata
-                .as_ref()
-                .and_then(|m| m.candidates_token_count),
+
+        let content: String =
+            response_body
+                .get_text()
+                .ok_or_else(|| -> Box<dyn Error + Send + Sync> {
+                    "Missing completion from response".into()
+                })?;
+
+        let prompt_tokens =
+            response_body
+                .get_prompt_tokens()
+                .ok_or_else(|| -> Box<dyn Error + Send + Sync> {
+                    "Missing prompt tokens from response".into()
+                })?;
+
+        let completion_tokens = response_body.get_completion_tokens().ok_or_else(
+            || -> Box<dyn Error + Send + Sync> { "Missing completion tokens from response".into() },
+        )?;
+
+        return Ok(Completion {
+            completion: content,
+            prompt_tokens,
+            completion_tokens,
         });
     }
 

@@ -1,33 +1,13 @@
-use std::{error::Error, fmt};
+use std::error::Error;
 
 use async_trait::async_trait;
-use futures::Stream;
 use serde::{Deserialize, Serialize};
 
-pub trait CompletionWrapper {
-    fn completion(&self) -> Option<String>;
-    fn prompt_tokens(&self) -> Option<i32>;
-    fn completion_tokens(&self) -> Option<i32>;
-}
-
-impl fmt::Debug for dyn CompletionWrapper {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let completion = self.completion().unwrap_or_else(|| "None".to_string());
-        let prompt_tokens = self
-            .prompt_tokens()
-            .map(|t| t.to_string())
-            .unwrap_or_else(|| "None".to_string());
-        let completion_tokens = self
-            .completion_tokens()
-            .map(|t| t.to_string())
-            .unwrap_or_else(|| "None".to_string());
-
-        write!(
-            f,
-            "Completion: {}, Prompt tokens: {}, Completion tokens: {}",
-            completion, prompt_tokens, completion_tokens
-        )
-    }
+#[derive(Debug)]
+pub struct Completion {
+    pub completion: String,
+    pub prompt_tokens: i32,
+    pub completion_tokens: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,52 +19,100 @@ pub enum Role {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChatMessage {
+pub struct Message {
     pub content: String,
     pub role: Option<Role>,
 }
 
+#[async_trait]
+pub trait Model {
+    async fn completion(
+        &self,
+        request: ModelRequest,
+    ) -> Result<Completion, Box<dyn Error + Send + Sync>>;
+
+    fn new_request(&self) -> ModelRequestBuilder<'_>
+    where
+        Self: Sized,
+    {
+        ModelRequestBuilder::new(self as &dyn Model)
+    }
+}
+
+#[derive(Clone)]
 pub struct Settings {
-    pub model: String,
     pub max_tokens: Option<i16>,
     pub timeout: Option<i16>,
-    pub temperature: i16,
+    pub temperature: Option<i16>,
     pub thinking_budget: Option<i16>,
 }
 
-pub trait StreamWrapper<T>: Stream<Item = Option<String>> + Send + Unpin {
-    fn new(
-        messages: Vec<ChatMessage>,
-        llm_call_settings: Settings,
-        caller_id: String,
-        stream: Box<dyn Stream<Item = Option<T>> + Send + Unpin>,
-    ) -> Self
-    where
-        Self: Sized;
-
-    fn llm_call_settings(&self) -> &Settings;
+#[derive(Clone)]
+pub struct ModelRequestBuilder<'a> {
+    pub model: &'a dyn Model,
+    pub system: Option<String>,
+    pub messages: Option<Vec<Message>>,
+    pub settings: Option<Settings>,
 }
 
-#[async_trait]
-pub trait Client {
-    async fn complete(
-        &self,
-        system_message: &Option<String>,
-        messages: &Vec<ChatMessage>,
-        llm_call_settings: &Settings,
-    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error + Send + Sync>> {
-        // TODO Add logging/tracing etc
+unsafe impl<'a> Sync for ModelRequestBuilder<'a> {}
+unsafe impl<'a> Send for ModelRequestBuilder<'a> {}
 
-        let response = self
-            .chat_completion(system_message, messages, llm_call_settings)
-            .await;
-        return response;
+pub struct ModelRequest {
+    pub system: Option<String>,
+    pub messages: Option<Vec<Message>>,
+    pub settings: Option<Settings>,
+}
+
+impl<'a> ModelRequestBuilder<'a> {
+    pub fn new(model: &'a dyn Model) -> Self {
+        ModelRequestBuilder {
+            model,
+            system: None,
+            messages: None,
+            settings: None,
+        }
     }
-    /// Abstract method that must be implemented by concrete types
-    async fn chat_completion(
-        &self,
-        system_message: &Option<String>,
-        messages: &Vec<ChatMessage>,
-        llm_call_settings: &Settings,
-    ) -> Result<Box<dyn CompletionWrapper>, Box<dyn Error + Send + Sync>>;
+
+    pub fn with_system(&mut self, system: String) -> &mut Self {
+        self.system = Some(system);
+        return self;
+    }
+
+    pub fn with_message(&mut self, message: Message) -> &mut Self {
+        match self.messages {
+            None => self.messages = Some(vec![message]),
+            Some(_) => {
+                self.messages.clone().map(|mut ms| ms.push(message));
+            }
+        }
+        return self;
+    }
+
+    pub fn with_messages(&mut self, messages: Vec<Message>) -> &mut Self {
+        match self.messages {
+            None => self.messages = Some(messages),
+            Some(_) => {
+                self.messages.clone().map(|mut ms| ms.extend(messages));
+            }
+        }
+        return self;
+    }
+
+    pub fn with_settings(&mut self, settings: Settings) -> &mut Self {
+        self.settings = Some(settings);
+        return self;
+    }
+
+    pub async fn completion(&self) -> Result<Completion, Box<dyn Error + Send + Sync>> {
+        self.model.completion(self.to_model_request()).await
+    }
+
+    pub fn to_model_request(&self) -> ModelRequest {
+        ModelRequest {
+            system: self.system.clone(),
+            messages: self.messages.clone(),
+            settings: self.settings.clone(),
+        }
+    }
 }
