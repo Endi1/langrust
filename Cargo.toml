@@ -1,5 +1,5 @@
 [package]
-name = "llm.rs"
+name = "llm_rs"
 version = "0.0.1"
 edition = "2024"
 license = "MIT"
