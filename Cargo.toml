@@ -1,7 +1,13 @@
 [package]
-name = "llm-rs"
+name = "llm.rs"
 version = "0.0.1"
 edition = "2024"
+license = "MIT"
+description = "Unified API for LLM providers"
+homepage = "https://github.com/Endi1/llm.rs"
+repository = "https://github.com/Endi1/llm.rs"
+readme = "README.md"
+keywords = ["llm", "ai"]
 
 [dependencies]
 async-trait = "0.1.89"
