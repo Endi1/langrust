@@ -6,3 +6,6 @@ mod vertex_client;
 
 #[cfg(test)]
 mod tests;
+
+pub use direct_api_client::GeminiApiModel;
+pub use vertex_client::GeminiVertexModel;
