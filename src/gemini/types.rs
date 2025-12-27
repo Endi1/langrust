@@ -48,10 +48,39 @@ pub struct SystemInstructionContent {
     pub parts: Vec<Part>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GeminiToolParameters {
+    #[serde(rename = "type")]
+    pub _type: String,
+    pub properties: HashMap<String, Value>, // TODO Eventually improve the typing here
+    pub required: Vec<String>,
+}
+
 #[derive(Serialize)]
 pub struct GeminiTool {
+    name: String,
+    description: String,
+    parameters: Option<GeminiToolParameters>,
+}
+
+impl GeminiTool {
+    pub fn from_tool(tool: &Tool) -> GeminiTool {
+        GeminiTool {
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+            parameters: tool.parameters.clone().map(|p| GeminiToolParameters {
+                _type: "object".to_string(),
+                properties: p.properties,
+                required: p.required,
+            }),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct GeminiTools {
     #[serde(rename = "functionDeclarations")]
-    pub function_declarations: Vec<Tool>,
+    pub function_declarations: Vec<GeminiTool>,
 }
 
 #[derive(Serialize)]
@@ -61,7 +90,7 @@ pub struct GeminiRequest {
     #[serde(rename = "generationConfig")]
     pub generation_config: GenerationConfig, // TODO implement safetySettings
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<GeminiTool>>,
+    pub tools: Option<Vec<GeminiTools>>,
 }
 
 #[derive(Debug, Deserialize)]

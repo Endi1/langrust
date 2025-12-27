@@ -6,7 +6,7 @@ use reqwest::RequestBuilder;
 use crate::{
     client::{Completion, FunctionCall, ModelRequest, Role},
     gemini::types::{
-        Content, GeminiRequest, GeminiResponse, GeminiTool, GenerationConfig, Part,
+        Content, GeminiRequest, GeminiResponse, GeminiTool, GeminiTools, GenerationConfig, Part,
         SystemInstructionContent, ThinkingConfig,
     },
 };
@@ -58,8 +58,12 @@ pub trait GeminiClient {
             contents,
             generation_config,
             tools: request.tools.clone().map(|ts| {
-                vec![GeminiTool {
-                    function_declarations: ts,
+                vec![GeminiTools {
+                    function_declarations: ts
+                        .clone()
+                        .iter()
+                        .map(|t| GeminiTool::from_tool(t))
+                        .collect(),
                 }]
             }),
         }

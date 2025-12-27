@@ -57,8 +57,6 @@ pub struct Settings {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolParameters {
-    #[serde(rename = "type")]
-    pub _type: String,
     pub properties: HashMap<String, Value>, // TODO Eventually improve the typing here
     pub required: Vec<String>,
 }
@@ -67,7 +65,65 @@ pub struct ToolParameters {
 pub struct Tool {
     pub name: String,
     pub description: String,
-    pub parameters: ToolParameters,
+    pub parameters: Option<ToolParameters>,
+}
+
+impl Tool {
+    pub fn new(name: String, description: String) -> Tool {
+        Tool {
+            name: name,
+            description: description,
+            parameters: None,
+        }
+    }
+
+    pub fn with_parameter(
+        self,
+        name: String,
+        _type: String,
+        description: String,
+        required: bool,
+    ) -> Tool {
+        match self.parameters {
+            None => {
+                let mut req = vec![];
+                if required {
+                    req.push(name.clone());
+                }
+
+                Tool {
+                    name: self.name,
+                    description: self.description,
+                    parameters: Some(ToolParameters {
+                        properties: HashMap::from([(
+                            name,
+                            serde_json::to_value(HashMap::from([
+                                ("type", _type),
+                                ("description", description),
+                            ]))
+                            .unwrap(),
+                        )]),
+                        required: req,
+                    }),
+                }
+            }
+            Some(mut p) => {
+                let _ = p.properties.insert(
+                    name,
+                    serde_json::to_value(HashMap::from([
+                        ("type", _type),
+                        ("description", description),
+                    ]))
+                    .unwrap(),
+                );
+                Tool {
+                    name: self.name,
+                    description: self.description,
+                    parameters: Some(p),
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone)]

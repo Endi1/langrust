@@ -1,7 +1,7 @@
-use std::{collections::HashMap, env};
+use std::env;
 
 use crate::{
-    client::{Message, Model, Role, Settings, Tool, ToolParameters},
+    client::{Message, Model, Role, Settings, Tool},
     gemini::{
         direct_api_client::GeminiApiModel, types::GeminiModel, vertex_client::GeminiVertexModel,
     },
@@ -59,6 +59,18 @@ async fn test_gemini_direct_function_call() {
         api_key: env::var("GEMINI_KEY").unwrap(),
         model: GeminiModel::Gemini25Flash,
     };
+
+    let tool = Tool::new(
+        "get_weather".to_string(),
+        "Get the weather for a city".to_string(),
+    )
+    .with_parameter(
+        "city".to_string(),
+        "string".to_string(),
+        "the city for which to get the weather".to_string(),
+        true,
+    );
+
     let response = model
         .new_request()
         .with_system("you are a helpful assistant".to_string())
@@ -72,22 +84,7 @@ async fn test_gemini_direct_function_call() {
             temperature: None,
             thinking_budget: None,
         })
-        .with_tool(Tool {
-            name: "get_weather".to_string(),
-            description: "Get the weather for a city".to_string(),
-            parameters: ToolParameters {
-                _type: "object".to_string(),
-                properties: HashMap::from([(
-                    "city".to_string(),
-                    serde_json::to_value(HashMap::from([
-                        ("type", "string"),
-                        ("description", "the city for which to get the weather"),
-                    ]))
-                    .unwrap(),
-                )]),
-                required: vec!["city".to_string()],
-            },
-        })
+        .with_tool(tool)
         .completion()
         .await;
     assert!(response.is_ok());
@@ -102,6 +99,18 @@ async fn test_gemini_vertex_function_call() {
         client: reqwest::Client::new(),
         model: GeminiModel::Gemini25Flash,
     };
+
+    let tool = Tool::new(
+        "get_weather".to_string(),
+        "Get the weather for a city".to_string(),
+    )
+    .with_parameter(
+        "city".to_string(),
+        "string".to_string(),
+        "the city for which to get the weather".to_string(),
+        true,
+    );
+
     let response = model
         .new_request()
         .with_system("you are a helpful assistant".to_string())
@@ -115,22 +124,7 @@ async fn test_gemini_vertex_function_call() {
             temperature: None,
             thinking_budget: None,
         })
-        .with_tool(Tool {
-            name: "get_weather".to_string(),
-            description: "Get the weather for a city".to_string(),
-            parameters: ToolParameters {
-                _type: "object".to_string(),
-                properties: HashMap::from([(
-                    "city".to_string(),
-                    serde_json::to_value(HashMap::from([
-                        ("type", "string"),
-                        ("description", "the city for which to get the weather"),
-                    ]))
-                    .unwrap(),
-                )]),
-                required: vec!["city".to_string()],
-            },
-        })
+        .with_tool(tool)
         .completion()
         .await;
     assert!(response.is_ok());
