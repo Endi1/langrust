@@ -8,4 +8,5 @@ mod vertex_client;
 mod tests;
 
 pub use direct_api_client::GeminiApiModel;
+pub use types::GeminiModel;
 pub use vertex_client::GeminiVertexModel;

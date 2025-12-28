@@ -2,4 +2,4 @@ pub mod client;
 pub mod gemini;
 
 pub use client::{Message, Role, Settings, Tool};
-pub use gemini::{GeminiApiModel, GeminiVertexModel};
+pub use gemini::{GeminiApiModel, GeminiModel, GeminiVertexModel};
