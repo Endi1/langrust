@@ -81,6 +81,9 @@ pub trait GeminiClient {
             .send()
             .await?;
 
+        // println!("here: {:?}", response.text().await?);
+        // return Err("Gemini request failed with status".into());
+
         let status = response.status();
         if !status.is_success() {
             let error_text = response.text().map_err(|e| e.to_string()).await?;
@@ -91,8 +94,6 @@ pub trait GeminiClient {
             .into());
         }
 
-        // println!("here: {:?}", response.text().await?);
-        // return Err("Gemini request failed with status".into());
         let response_body: GeminiResponse = response.json().map_err(|e| e.to_string()).await?;
 
         let content: String =

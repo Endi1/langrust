@@ -1,3 +1,4 @@
+use schemars::{JsonSchema, Schema, schema_for, schema_for_value};
 use serde_json::{self, Value};
 use std::{collections::HashMap, error::Error};
 
@@ -57,11 +58,13 @@ pub struct Settings {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolParameters {
+    #[serde(rename = "type")]
+    pub _type: String,
     pub properties: HashMap<String, Value>, // TODO Eventually improve the typing here
     pub required: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Tool {
     pub name: String,
     pub description: String,
@@ -69,59 +72,25 @@ pub struct Tool {
 }
 
 impl Tool {
-    pub fn new(name: String, description: String) -> Tool {
+    pub fn new(name: &'static str, description: &'static str) -> Tool {
         Tool {
-            name: name,
-            description: description,
+            name: name.to_string(),
+            description: description.to_string(),
             parameters: None,
         }
     }
 
-    pub fn with_parameter(
-        self,
-        name: String,
-        _type: String,
-        description: String,
-        required: bool,
-    ) -> Tool {
+    pub fn with_parameter<T: JsonSchema>(self) -> Result<Tool, serde_json::Error> {
+        let arg_schema = schema_for!(T);
+        let json_value = serde_json::to_value(&arg_schema)?;
+        let parameters: ToolParameters = serde_json::from_value(json_value)?;
         match self.parameters {
-            None => {
-                let mut req = vec![];
-                if required {
-                    req.push(name.clone());
-                }
-
-                Tool {
-                    name: self.name,
-                    description: self.description,
-                    parameters: Some(ToolParameters {
-                        properties: HashMap::from([(
-                            name,
-                            serde_json::to_value(HashMap::from([
-                                ("type", _type),
-                                ("description", description),
-                            ]))
-                            .unwrap(),
-                        )]),
-                        required: req,
-                    }),
-                }
-            }
-            Some(mut p) => {
-                let _ = p.properties.insert(
-                    name,
-                    serde_json::to_value(HashMap::from([
-                        ("type", _type),
-                        ("description", description),
-                    ]))
-                    .unwrap(),
-                );
-                Tool {
-                    name: self.name,
-                    description: self.description,
-                    parameters: Some(p),
-                }
-            }
+            None => Ok(Tool {
+                name: self.name,
+                description: self.description,
+                parameters: Some(parameters),
+            }),
+            Some(_) => Ok(self),
         }
     }
 }
