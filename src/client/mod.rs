@@ -33,6 +33,53 @@ pub struct Message {
     pub role: Option<Role>,
 }
 
+#[derive(Serialize)]
+pub struct FunctionResponse {
+    name: String,
+    response: Option<serde_json::Value>,
+}
+
+impl FunctionResponse {
+    fn new(name: String, response: Option<serde_json::Value>) -> FunctionResponse {
+        Self {
+            name: name,
+            response: response,
+        }
+    }
+}
+
+impl Message {
+    pub fn user(content: &'static str) -> Message {
+        Message {
+            content: content.to_string(),
+            role: Some(Role::User),
+        }
+    }
+
+    pub fn model(content: &'static str) -> Message {
+        Message {
+            content: content.to_string(),
+            role: Some(Role::Model),
+        }
+    }
+
+    pub fn function_call(function_call: FunctionCall) -> Message {
+        Message {
+            content: serde_json::to_string(&function_call).unwrap(),
+            role: Some(Role::Model),
+        }
+    }
+
+    pub fn function_result<T: Serialize>(name: String, value: T) -> Message {
+        let function_response = serde_json::to_value(&value).ok();
+        Message {
+            content: serde_json::to_string(&FunctionResponse::new(name, function_response))
+                .unwrap(),
+            role: Some(Role::Model),
+        }
+    }
+}
+
 #[async_trait]
 pub trait Model {
     async fn completion(
