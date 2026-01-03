@@ -49,16 +49,16 @@ impl FunctionResponse {
 }
 
 impl Message {
-    pub fn user(content: &'static str) -> Message {
+    pub fn user(content: String) -> Message {
         Message {
-            content: content.to_string(),
+            content: content,
             role: Some(Role::User),
         }
     }
 
-    pub fn model(content: &'static str) -> Message {
+    pub fn model(content: String) -> Message {
         Message {
-            content: content.to_string(),
+            content: content,
             role: Some(Role::Model),
         }
     }

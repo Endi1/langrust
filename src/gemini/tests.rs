@@ -21,7 +21,7 @@ async fn test_generate_content_vertex() {
 
     let response = model
         .new_request()
-        .with_message(Message::user("hello, how are you?"))
+        .with_message(Message::user("hello, how are you?".to_string()))
         .completion()
         .await;
     assert!(response.is_ok());
@@ -37,7 +37,7 @@ async fn test_generate_content_direct() {
     let response = model
         .new_request()
         .with_system("you are a helpful assistant".to_string())
-        .with_message(Message::user("hello, how are you?"))
+        .with_message(Message::user("hello, how are you?".to_string()))
         .with_settings(Settings {
             max_tokens: Some(8000),
             timeout: None,
@@ -64,7 +64,9 @@ async fn test_gemini_direct_function_call() {
     let response = model
         .new_request()
         .with_system("you are a helpful assistant".to_string())
-        .with_message(Message::user("What is the weather like in Paris?"))
+        .with_message(Message::user(
+            "What is the weather like in Paris?".to_string(),
+        ))
         .with_settings(Settings {
             max_tokens: Some(8000),
             timeout: None,
@@ -94,7 +96,9 @@ async fn test_gemini_vertex_function_call() {
     let response = model
         .new_request()
         .with_system("you are a helpful assistant".to_string())
-        .with_message(Message::user("What is the weather like in Paris?"))
+        .with_message(Message::user(
+            "What is the weather like in Paris?".to_string(),
+        ))
         .with_settings(Settings {
             max_tokens: Some(8000),
             timeout: None,
@@ -151,7 +155,9 @@ async fn test_function_execution() {
     let response = model
         .new_request()
         .with_system("you are a helpful assistant".to_string())
-        .with_message(Message::user("What is the weather like in Paris?"))
+        .with_message(Message::user(
+            "What is the weather like in Paris?".to_string(),
+        ))
         .with_settings(Settings {
             max_tokens: Some(8000),
             timeout: None,
