@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::client::{Role, Tool};
-use schemars::Schema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

@@ -53,7 +53,7 @@ pub trait GeminiClient {
             parts: vec![Part { text: m }],
         });
 
-        GeminiRequest {
+        let req = GeminiRequest {
             system_instruction,
             contents,
             generation_config,
@@ -66,7 +66,8 @@ pub trait GeminiClient {
                         .collect(),
                 }]
             }),
-        }
+        };
+        req
     }
 
     async fn generate_content(

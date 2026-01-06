@@ -1,4 +1,4 @@
-use schemars::{JsonSchema, Schema, schema_for, schema_for_value};
+use schemars::{JsonSchema, schema_for};
 use serde_json::{self, Value};
 use std::{collections::HashMap, error::Error};
 
@@ -107,8 +107,18 @@ pub struct Settings {
 pub struct ToolParameters {
     #[serde(rename = "type")]
     pub _type: String,
+    #[serde(default = "default_properties")]
     pub properties: HashMap<String, Value>, // TODO Eventually improve the typing here
+    #[serde(default = "default_required")]
     pub required: Vec<String>,
+}
+
+fn default_properties() -> HashMap<String, Value> {
+    HashMap::new()
+}
+
+fn default_required() -> Vec<String> {
+    vec![]
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
