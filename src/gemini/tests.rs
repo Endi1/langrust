@@ -50,6 +50,34 @@ async fn test_generate_content_direct() {
 }
 
 #[tokio::test]
+async fn test_with_messages_gemini_direct() {
+    let model = GeminiApiModel {
+        client: reqwest::Client::new(),
+        api_key: env::var("GEMINI_KEY").unwrap(),
+        model: GeminiModel::Gemini25Flash,
+    };
+    let messages = vec![
+        Message::user("hello, how are you?".to_string()),
+        Message::model("I am fine, and you?".to_string()),
+    ];
+    let mut binding = model.new_request();
+    let request_builder = binding
+        .with_system("you are a helpful assistant".to_string())
+        .with_messages(messages)
+        .with_message(Message::user("I am fine, thanks for asking".to_string()))
+        .with_settings(Settings {
+            max_tokens: Some(8000),
+            timeout: None,
+            temperature: None,
+            thinking_budget: None,
+        });
+
+    let response = request_builder.completion().await;
+
+    assert!(response.is_ok());
+}
+
+#[tokio::test]
 async fn test_gemini_direct_function_call() {
     let model = GeminiApiModel {
         client: reqwest::Client::new(),

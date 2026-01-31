@@ -188,21 +188,17 @@ impl<'a> ModelRequestBuilder<'a> {
     }
 
     pub fn with_message(&mut self, message: Message) -> &mut Self {
-        match self.messages {
+        match &mut self.messages {
             None => self.messages = Some(vec![message]),
-            Some(_) => {
-                self.messages.clone().map(|mut ms| ms.push(message));
-            }
+            Some(ms) => ms.push(message),
         }
         return self;
     }
 
     pub fn with_messages(&mut self, messages: Vec<Message>) -> &mut Self {
-        match self.messages {
+        match &mut self.messages {
             None => self.messages = Some(messages),
-            Some(_) => {
-                self.messages.clone().map(|mut ms| ms.extend(messages));
-            }
+            Some(ms) => ms.extend(messages),
         }
         return self;
     }
