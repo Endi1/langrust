@@ -1,10 +1,10 @@
-use std::{collections::HashMap, env};
+use std::env;
 
-use schemars::{JsonSchema, schema_for};
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    client::{Message, Model, Role, Settings, Tool},
+    client::{Message, Model, Settings, Tool},
     gemini::{
         direct_api_client::GeminiApiModel, types::GeminiModel, vertex_client::GeminiVertexModel,
     },

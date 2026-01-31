@@ -143,19 +143,28 @@ impl GeminiResponse {
             .as_ref()
             .and_then(|m| m.candidates_token_count)
     }
+
+    pub fn get_total_tokens(&self) -> Option<i32> {
+        self.usage_metadata
+            .as_ref()
+            .and_then(|m| m.total_token_count)
+    }
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Candidate {
     pub content: ResponseContent,
     #[serde(rename = "finishReason")]
+    #[allow(dead_code)]
     pub finish_reason: Option<String>,
+    #[allow(dead_code)]
     pub index: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ResponseContent {
     pub parts: Vec<ResponsePart>,
+    #[allow(dead_code)]
     pub role: Option<String>,
 }
 

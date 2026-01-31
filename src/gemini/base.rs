@@ -111,11 +111,18 @@ pub trait GeminiClient {
         let completion_tokens = response_body.get_completion_tokens().ok_or_else(
             || -> Box<dyn Error + Send + Sync> { "Missing completion tokens from response".into() },
         )?;
+        let total_tokens =
+            response_body
+                .get_total_tokens()
+                .ok_or_else(|| -> Box<dyn Error + Send + Sync> {
+                    "Missing total tokens from response".into()
+                })?;
 
         return Ok(Completion {
             completion: content,
             prompt_tokens,
             completion_tokens,
+            total_tokens,
             function: response_body.get_function().map(|gf| FunctionCall {
                 name: gf.name,
                 args: gf.args,
