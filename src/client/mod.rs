@@ -5,6 +5,9 @@ use std::{collections::HashMap, error::Error};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionCall {
     pub name: String,
