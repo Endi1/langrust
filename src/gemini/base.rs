@@ -1,4 +1,5 @@
-use futures::{TryFutureExt, stream};
+use eventsource_stream::Eventsource;
+use futures::{TryFutureExt, StreamExt, stream};
 use std::error::Error;
 
 use reqwest::RequestBuilder;
@@ -155,108 +156,56 @@ pub trait GeminiClient {
             .into());
         }
 
-        use futures::StreamExt;
-        use bytes::BytesMut;
-
-        let byte_stream = response.bytes_stream();
-
-        let event_stream = stream::unfold(
-            (byte_stream.boxed(), BytesMut::new()),
-            |(mut byte_stream, mut buffer)| async move {
-                loop {
-                    // Try to extract a complete SSE event from the buffer
-                    let buf_str = String::from_utf8_lossy(&buffer).to_string();
-                    if let Some(event_end) = buf_str.find("\n\n") {
-                        let event_text = buf_str[..event_end].to_string();
-                        let remaining = buf_str[event_end + 2..].to_string();
-                        buffer = BytesMut::from(remaining.as_bytes());
-
-                        // Parse SSE: lines starting with "data: "
-                        let data: String = event_text
-                            .lines()
-                            .filter_map(|line| line.strip_prefix("data: "))
-                            .collect::<Vec<_>>()
-                            .join("");
-
-                        if data.is_empty() {
-                            continue;
-                        }
-
-                        let parsed: Result<GeminiResponse, _> = serde_json::from_str(&data);
-                        match parsed {
-                            Ok(gemini_response) => {
-                                let mut events: Vec<
-                                    Result<StreamEvent, Box<dyn Error + Send + Sync>>,
-                                > = Vec::new();
-
-                                if let Some(text) = gemini_response.get_text() {
-                                    if !text.is_empty() {
-                                        events.push(Ok(StreamEvent::Delta(text)));
-                                    }
-                                }
-
-                                if let Some(gf) = gemini_response.get_function() {
-                                    events.push(Ok(StreamEvent::FunctionCall(FunctionCall {
-                                        name: gf.name,
-                                        args: gf.args,
-                                    })));
-                                }
-
-                                if let Some(usage) = &gemini_response.usage_metadata {
-                                    if let (Some(pt), Some(ct), Some(tt)) = (
-                                        usage.prompt_token_count,
-                                        usage.candidates_token_count,
-                                        usage.total_token_count,
-                                    ) {
-                                        events.push(Ok(StreamEvent::Usage {
-                                            prompt_tokens: pt,
-                                            completion_tokens: ct,
-                                            total_tokens: tt,
-                                        }));
-                                    }
-                                }
-
-                                if !events.is_empty() {
-                                    return Some((
-                                        stream::iter(events),
-                                        (byte_stream, buffer),
-                                    ));
-                                }
-                                continue;
-                            }
-                            Err(e) => {
-                                return Some((
-                                    stream::iter(vec![Err(Box::new(e)
-                                        as Box<dyn Error + Send + Sync>)]),
-                                    (byte_stream, buffer),
-                                ));
-                            }
-                        }
+        let event_stream = response.bytes_stream().eventsource().filter_map(|result| async {
+            match result {
+                Ok(event) => {
+                    if event.data.is_empty() {
+                        return None;
                     }
+                    let parsed: Result<GeminiResponse, _> = serde_json::from_str(&event.data);
+                    match parsed {
+                        Ok(gemini_response) => {
+                            let mut events = Vec::new();
 
-                    // Need more data from the network
-                    use futures::TryStreamExt;
-                    match byte_stream.try_next().await {
-                        Ok(Some(chunk)) => {
-                            buffer.extend_from_slice(&chunk);
+                            if let Some(text) = gemini_response.get_text() {
+                                if !text.is_empty() {
+                                    events.push(StreamEvent::Delta(text));
+                                }
+                            }
+
+                            if let Some(gf) = gemini_response.get_function() {
+                                events.push(StreamEvent::FunctionCall(FunctionCall {
+                                    name: gf.name,
+                                    args: gf.args,
+                                }));
+                            }
+
+                            if let Some(usage) = &gemini_response.usage_metadata {
+                                if let (Some(pt), Some(ct), Some(tt)) = (
+                                    usage.prompt_token_count,
+                                    usage.candidates_token_count,
+                                    usage.total_token_count,
+                                ) {
+                                    events.push(StreamEvent::Usage {
+                                        prompt_tokens: pt,
+                                        completion_tokens: ct,
+                                        total_tokens: tt,
+                                    });
+                                }
+                            }
+
+                            if events.is_empty() {
+                                None
+                            } else {
+                                Some(stream::iter(events))
+                            }
                         }
-                        Ok(None) => {
-                            // Stream ended
-                            return None;
-                        }
-                        Err(e) => {
-                            return Some((
-                                stream::iter(vec![Err(
-                                    Box::new(e) as Box<dyn Error + Send + Sync>
-                                )]),
-                                (byte_stream, buffer),
-                            ));
-                        }
+                        Err(e) => Some(stream::iter(vec![StreamEvent::Error(e.to_string())])),
                     }
                 }
-            },
-        )
-        .flat_map(|s| s);
+                Err(e) => Some(stream::iter(vec![StreamEvent::Error(e.to_string())])),
+            }
+        }).flat_map(|s| s);
 
         Ok(Box::pin(event_stream))
     }

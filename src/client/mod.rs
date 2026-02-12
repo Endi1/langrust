@@ -33,10 +33,10 @@ pub enum StreamEvent {
         total_tokens: i32,
     },
     FunctionCall(FunctionCall),
+    Error(String),
 }
 
-pub type StreamResult =
-    Pin<Box<dyn Stream<Item = Result<StreamEvent, Box<dyn Error + Send + Sync>>> + Send>>;
+pub type StreamResult = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
