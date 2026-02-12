@@ -25,13 +25,7 @@ impl Model for GeminiVertexModel {
         request: ModelRequest,
     ) -> Result<Completion, Box<dyn Error + Send + Sync>> {
         let response = self.generate_content(request).await?;
-        return Ok(Completion {
-            completion: response.completion,
-            completion_tokens: response.completion_tokens,
-            total_tokens: response.total_tokens,
-            prompt_tokens: response.prompt_tokens,
-            function: response.function,
-        });
+        Ok(response)
     }
 
     async fn stream_completion(

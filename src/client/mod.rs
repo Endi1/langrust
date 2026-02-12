@@ -18,20 +18,21 @@ pub struct FunctionCall {
 #[derive(Debug)]
 pub struct Completion {
     pub completion: String,
+    pub usage: Usage,
+    pub function: Option<FunctionCall>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Usage {
     pub prompt_tokens: i32,
     pub completion_tokens: i32,
     pub total_tokens: i32,
-    pub function: Option<FunctionCall>,
 }
 
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     Delta(String),
-    Usage {
-        prompt_tokens: i32,
-        completion_tokens: i32,
-        total_tokens: i32,
-    },
+    Usage(Usage),
     FunctionCall(FunctionCall),
     Error(String),
 }

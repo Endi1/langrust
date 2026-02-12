@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    client::{Message, Model, Settings, StreamEvent, Tool},
+    client::{Message, Model, Settings, StreamEvent, Tool, Usage},
     gemini::{
         direct_api_client::GeminiApiModel, types::GeminiModel, vertex_client::GeminiVertexModel,
     },
@@ -239,11 +239,11 @@ async fn test_stream_generate_content_direct() {
                 got_delta = true;
                 full_text.push_str(&text);
             }
-            StreamEvent::Usage {
+            StreamEvent::Usage(Usage {
                 prompt_tokens,
                 completion_tokens,
                 total_tokens,
-            } => {
+            }) => {
                 got_usage = true;
                 assert!(prompt_tokens > 0);
                 assert!(completion_tokens > 0);
@@ -287,17 +287,16 @@ async fn test_stream_generate_content_vertex() {
     let mut full_text = String::new();
 
     while let Some(event) = stream.next().await {
-
         match event {
             StreamEvent::Delta(text) => {
                 got_delta = true;
                 full_text.push_str(&text);
             }
-            StreamEvent::Usage {
+            StreamEvent::Usage(Usage {
                 prompt_tokens,
                 completion_tokens,
                 total_tokens,
-            } => {
+            }) => {
                 got_usage = true;
                 assert!(prompt_tokens > 0);
                 assert!(completion_tokens > 0);
