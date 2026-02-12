@@ -12,11 +12,28 @@ impl Model for MockModel {
     ) -> Result<Completion, Box<dyn Error + Send + Sync>> {
         Ok(Completion {
             completion: "test".to_string(),
-            prompt_tokens: 10,
-            completion_tokens: 5,
-            total_tokens: 15,
+            usage: Usage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+            },
             function: None,
         })
+    }
+
+    async fn stream_completion(
+        &self,
+        _request: ModelRequest,
+    ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
+        use futures::stream;
+        Ok(Box::pin(stream::iter(vec![
+            StreamEvent::Delta("test".to_string()),
+            StreamEvent::Usage(Usage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+            }),
+        ])))
     }
 }
 
@@ -207,7 +224,7 @@ async fn test_completion() {
     assert!(result.is_ok());
     let completion = result.unwrap();
     assert_eq!(completion.completion, "test");
-    assert_eq!(completion.total_tokens, 15);
+    assert_eq!(completion.usage.total_tokens, 15);
 }
 
 #[test]

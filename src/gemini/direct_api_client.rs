@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::{
-    client::{Completion, Model, ModelRequest},
+    client::{Completion, Model, ModelRequest, StreamResult},
     gemini::{
         base::GeminiClient,
         types::{GeminiModel, GeminiRequest},
@@ -23,13 +23,14 @@ impl Model for GeminiApiModel {
         request: ModelRequest,
     ) -> Result<Completion, Box<dyn Error + Send + Sync>> {
         let response = self.generate_content(request).await?;
-        return Ok(Completion {
-            completion: response.completion,
-            completion_tokens: response.completion_tokens,
-            total_tokens: response.total_tokens,
-            prompt_tokens: response.prompt_tokens,
-            function: response.function,
-        });
+        return Ok(response);
+    }
+
+    async fn stream_completion(
+        &self,
+        request: ModelRequest,
+    ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
+        self.stream_generate_content(request).await
     }
 }
 
