@@ -18,6 +18,21 @@ impl Model for MockModel {
             function: None,
         })
     }
+
+    async fn stream_completion(
+        &self,
+        _request: ModelRequest,
+    ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
+        use futures::stream;
+        Ok(Box::pin(stream::iter(vec![
+            Ok(StreamEvent::Delta("test".to_string())),
+            Ok(StreamEvent::Usage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+            }),
+        ])))
+    }
 }
 
 #[test]

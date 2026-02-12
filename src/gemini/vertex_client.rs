@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::{
-    client::{Completion, Model, ModelRequest},
+    client::{Completion, Model, ModelRequest, StreamResult},
     gemini::{
         base::GeminiClient,
         gcloud_helpers::get_access_token,
@@ -32,6 +32,13 @@ impl Model for GeminiVertexModel {
             prompt_tokens: response.prompt_tokens,
             function: response.function,
         });
+    }
+
+    async fn stream_completion(
+        &self,
+        request: ModelRequest,
+    ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
+        self.stream_generate_content(request).await
     }
 }
 

@@ -1,10 +1,11 @@
 use std::env;
 
+use futures::StreamExt;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    client::{Message, Model, Settings, Tool},
+    client::{Message, Model, Settings, StreamEvent, Tool},
     gemini::{
         direct_api_client::GeminiApiModel, types::GeminiModel, vertex_client::GeminiVertexModel,
     },
@@ -204,4 +205,154 @@ async fn test_function_execution() {
 
     let function_response = weather_tool.run(parsed_args);
     assert!(function_response == "The weather in Paris is great!".to_string());
+}
+
+#[tokio::test]
+async fn test_stream_generate_content_direct() {
+    let model = GeminiApiModel {
+        client: reqwest::Client::new(),
+        api_key: env::var("GEMINI_KEY").unwrap(),
+        model: GeminiModel::Gemini25Flash,
+    };
+
+    let mut stream = model
+        .new_request()
+        .with_system("you are a helpful assistant".to_string())
+        .with_message(Message::user("hello, how are you?".to_string()))
+        .with_settings(Settings {
+            max_tokens: Some(8000),
+            timeout: None,
+            temperature: None,
+            thinking_budget: None,
+        })
+        .stream()
+        .await
+        .expect("stream request should succeed");
+
+    let mut got_delta = false;
+    let mut got_usage = false;
+    let mut full_text = String::new();
+
+    while let Some(event) = stream.next().await {
+        let event = event.expect("stream event should not be an error");
+        match event {
+            StreamEvent::Delta(text) => {
+                got_delta = true;
+                full_text.push_str(&text);
+            }
+            StreamEvent::Usage {
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+            } => {
+                got_usage = true;
+                assert!(prompt_tokens > 0);
+                assert!(completion_tokens > 0);
+                assert!(total_tokens > 0);
+            }
+            StreamEvent::FunctionCall(_) => {}
+        }
+    }
+
+    assert!(got_delta, "should have received at least one Delta event");
+    assert!(got_usage, "should have received a Usage event");
+    assert!(!full_text.is_empty(), "streamed text should not be empty");
+}
+
+#[tokio::test]
+async fn test_stream_generate_content_vertex() {
+    let model = GeminiVertexModel {
+        region: env::var("VERTEX_REGION").unwrap(),
+        project_name: env::var("VERTEX_PROJECT").unwrap(),
+        client: reqwest::Client::new(),
+        model: GeminiModel::Gemini25Flash,
+    };
+
+    let mut stream = model
+        .new_request()
+        .with_system("you are a helpful assistant".to_string())
+        .with_message(Message::user("hello, how are you?".to_string()))
+        .with_settings(Settings {
+            max_tokens: Some(8000),
+            timeout: None,
+            temperature: None,
+            thinking_budget: None,
+        })
+        .stream()
+        .await
+        .expect("stream request should succeed");
+
+    let mut got_delta = false;
+    let mut got_usage = false;
+    let mut full_text = String::new();
+
+    while let Some(event) = stream.next().await {
+        let event = event.expect("stream event should not be an error");
+        match event {
+            StreamEvent::Delta(text) => {
+                got_delta = true;
+                full_text.push_str(&text);
+            }
+            StreamEvent::Usage {
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+            } => {
+                got_usage = true;
+                assert!(prompt_tokens > 0);
+                assert!(completion_tokens > 0);
+                assert!(total_tokens > 0);
+            }
+            StreamEvent::FunctionCall(_) => {}
+        }
+    }
+
+    assert!(got_delta, "should have received at least one Delta event");
+    assert!(got_usage, "should have received a Usage event");
+    assert!(!full_text.is_empty(), "streamed text should not be empty");
+}
+
+#[tokio::test]
+async fn test_stream_function_call_direct() {
+    let model = GeminiApiModel {
+        client: reqwest::Client::new(),
+        api_key: env::var("GEMINI_KEY").unwrap(),
+        model: GeminiModel::Gemini25Flash,
+    };
+
+    let tool = Tool::new("get_weather", "Get the weather for a city")
+        .with_parameter::<WeatherRequest>()
+        .unwrap();
+
+    let mut stream = model
+        .new_request()
+        .with_system("you are a helpful assistant".to_string())
+        .with_message(Message::user(
+            "What is the weather like in Paris?".to_string(),
+        ))
+        .with_settings(Settings {
+            max_tokens: Some(8000),
+            timeout: None,
+            temperature: None,
+            thinking_budget: None,
+        })
+        .with_tool(tool)
+        .stream()
+        .await
+        .expect("stream request should succeed");
+
+    let mut got_function_call = false;
+
+    while let Some(event) = stream.next().await {
+        let event = event.expect("stream event should not be an error");
+        if let StreamEvent::FunctionCall(fc) = event {
+            got_function_call = true;
+            assert_eq!(fc.name, "get_weather");
+        }
+    }
+
+    assert!(
+        got_function_call,
+        "should have received a FunctionCall event"
+    );
 }

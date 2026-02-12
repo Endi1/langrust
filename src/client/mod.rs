@@ -1,8 +1,9 @@
 use schemars::{JsonSchema, schema_for};
 use serde_json::{self, Value};
-use std::{collections::HashMap, error::Error};
+use std::{collections::HashMap, error::Error, pin::Pin};
 
 use async_trait::async_trait;
+use futures::Stream;
 use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
@@ -22,6 +23,20 @@ pub struct Completion {
     pub total_tokens: i32,
     pub function: Option<FunctionCall>,
 }
+
+#[derive(Debug, Clone)]
+pub enum StreamEvent {
+    Delta(String),
+    Usage {
+        prompt_tokens: i32,
+        completion_tokens: i32,
+        total_tokens: i32,
+    },
+    FunctionCall(FunctionCall),
+}
+
+pub type StreamResult =
+    Pin<Box<dyn Stream<Item = Result<StreamEvent, Box<dyn Error + Send + Sync>>> + Send>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
@@ -90,6 +105,11 @@ pub trait Model {
         &self,
         request: ModelRequest,
     ) -> Result<Completion, Box<dyn Error + Send + Sync>>;
+
+    async fn stream_completion(
+        &self,
+        request: ModelRequest,
+    ) -> Result<StreamResult, Box<dyn Error + Send + Sync>>;
 
     fn new_request(&self) -> ModelRequestBuilder<'_>
     where
@@ -234,6 +254,10 @@ impl<'a> ModelRequestBuilder<'a> {
 
     pub async fn completion(&self) -> Result<Completion, Box<dyn Error + Send + Sync>> {
         self.model.completion(self.to_model_request()).await
+    }
+
+    pub async fn stream(&self) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
+        self.model.stream_completion(self.to_model_request()).await
     }
 
     pub fn to_model_request(&self) -> ModelRequest {
