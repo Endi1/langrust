@@ -234,7 +234,6 @@ async fn test_stream_generate_content_direct() {
     let mut full_text = String::new();
 
     while let Some(event) = stream.next().await {
-        let event = event.expect("stream event should not be an error");
         match event {
             StreamEvent::Delta(text) => {
                 got_delta = true;
@@ -251,6 +250,7 @@ async fn test_stream_generate_content_direct() {
                 assert!(total_tokens > 0);
             }
             StreamEvent::FunctionCall(_) => {}
+            StreamEvent::Error(e) => panic!("stream event should not be an error: {}", e),
         }
     }
 
@@ -287,7 +287,7 @@ async fn test_stream_generate_content_vertex() {
     let mut full_text = String::new();
 
     while let Some(event) = stream.next().await {
-        let event = event.expect("stream event should not be an error");
+
         match event {
             StreamEvent::Delta(text) => {
                 got_delta = true;
@@ -304,6 +304,7 @@ async fn test_stream_generate_content_vertex() {
                 assert!(total_tokens > 0);
             }
             StreamEvent::FunctionCall(_) => {}
+            StreamEvent::Error(e) => panic!("stream event should not be an error: {}", e),
         }
     }
 
@@ -344,10 +345,13 @@ async fn test_stream_function_call_direct() {
     let mut got_function_call = false;
 
     while let Some(event) = stream.next().await {
-        let event = event.expect("stream event should not be an error");
-        if let StreamEvent::FunctionCall(fc) = event {
-            got_function_call = true;
-            assert_eq!(fc.name, "get_weather");
+        match event {
+            StreamEvent::FunctionCall(fc) => {
+                got_function_call = true;
+                assert_eq!(fc.name, "get_weather");
+            }
+            StreamEvent::Error(e) => panic!("stream event should not be an error: {}", e),
+            _ => {}
         }
     }
 

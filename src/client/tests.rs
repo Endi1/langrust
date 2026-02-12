@@ -25,12 +25,12 @@ impl Model for MockModel {
     ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
         use futures::stream;
         Ok(Box::pin(stream::iter(vec![
-            Ok(StreamEvent::Delta("test".to_string())),
-            Ok(StreamEvent::Usage {
+            StreamEvent::Delta("test".to_string()),
+            StreamEvent::Usage {
                 prompt_tokens: 10,
                 completion_tokens: 5,
                 total_tokens: 15,
-            }),
+            },
         ])))
     }
 }
