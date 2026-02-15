@@ -33,8 +33,31 @@ pub struct GenerationConfig {
 }
 
 #[derive(Serialize)]
-pub struct Part {
-    pub text: String,
+#[serde(untagged)]
+pub enum Part {
+    Text {
+        text: String,
+    },
+    FunctionCall {
+        #[serde(rename = "functionCall")]
+        function_call: FunctionCallPart,
+    },
+    FunctionResponse {
+        #[serde(rename = "functionResponse")]
+        function_response: FunctionResponsePart,
+    },
+}
+
+#[derive(Serialize)]
+pub struct FunctionCallPart {
+    pub name: String,
+    pub args: HashMap<String, Value>,
+}
+
+#[derive(Serialize)]
+pub struct FunctionResponsePart {
+    pub name: String,
+    pub response: Value,
 }
 
 #[derive(Serialize)]
@@ -63,15 +86,113 @@ pub struct GeminiTool {
     parameters: Option<GeminiToolParameters>,
 }
 
+/// Convert a JSON Schema type string to Gemini API type string.
+fn to_gemini_type(json_schema_type: &str) -> String {
+    match json_schema_type {
+        "string" => "STRING".to_string(),
+        "integer" => "INTEGER".to_string(),
+        "number" => "NUMBER".to_string(),
+        "boolean" => "BOOLEAN".to_string(),
+        "array" => "ARRAY".to_string(),
+        "object" => "OBJECT".to_string(),
+        other => other.to_uppercase(),
+    }
+}
+
+/// Convert a JSON Schema property value to a Gemini-compatible schema value.
+/// Handles: type arrays like ["integer", "null"] → { type: "INTEGER", nullable: true },
+/// removes unsupported fields (format, minimum, maximum, $schema, title, etc.),
+/// and recursively converts nested objects/arrays.
+fn convert_property_to_gemini(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut result = serde_json::Map::new();
+            let mut nullable = false;
+            let mut resolved_type: Option<String> = None;
+
+            // Handle "type" field — could be a string or an array like ["integer", "null"]
+            if let Some(type_val) = map.get("type") {
+                match type_val {
+                    Value::Array(types) => {
+                        // e.g. ["integer", "null"]
+                        let non_null: Vec<&str> = types
+                            .iter()
+                            .filter_map(|t| t.as_str())
+                            .filter(|t| *t != "null")
+                            .collect();
+                        if types.iter().any(|t| t.as_str() == Some("null")) {
+                            nullable = true;
+                        }
+                        if let Some(first) = non_null.first() {
+                            resolved_type = Some(to_gemini_type(first));
+                        }
+                    }
+                    Value::String(s) => {
+                        resolved_type = Some(to_gemini_type(s));
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(t) = resolved_type {
+                result.insert("type".to_string(), Value::String(t));
+            }
+
+            if nullable {
+                result.insert("nullable".to_string(), Value::Bool(true));
+            }
+
+            // Copy over description if present
+            if let Some(desc) = map.get("description") {
+                result.insert("description".to_string(), desc.clone());
+            }
+
+            // Copy over enum if present
+            if let Some(enum_val) = map.get("enum") {
+                result.insert("enum".to_string(), enum_val.clone());
+            }
+
+            // Recursively convert properties for nested objects
+            if let Some(Value::Object(props)) = map.get("properties") {
+                let converted: serde_json::Map<String, Value> = props
+                    .iter()
+                    .map(|(k, v)| (k.clone(), convert_property_to_gemini(v)))
+                    .collect();
+                result.insert("properties".to_string(), Value::Object(converted));
+            }
+
+            // Copy over required for nested objects
+            if let Some(req) = map.get("required") {
+                result.insert("required".to_string(), req.clone());
+            }
+
+            // Handle items for arrays
+            if let Some(items) = map.get("items") {
+                result.insert("items".to_string(), convert_property_to_gemini(items));
+            }
+
+            Value::Object(result)
+        }
+        other => other.clone(),
+    }
+}
+
 impl GeminiTool {
     pub fn from_tool(tool: &Tool) -> GeminiTool {
         GeminiTool {
             name: tool.name.clone(),
             description: tool.description.clone(),
-            parameters: tool.parameters.clone().map(|p| GeminiToolParameters {
-                _type: p._type,
-                properties: p.properties,
-                required: p.required,
+            parameters: tool.parameters.clone().map(|p| {
+                let converted_properties: HashMap<String, Value> = p
+                    .properties
+                    .iter()
+                    .map(|(k, v)| (k.clone(), convert_property_to_gemini(v)))
+                    .collect();
+                GeminiToolParameters {
+                    _type: to_gemini_type(&p._type),
+                    properties: converted_properties,
+                    required: p.required,
+                }
             }),
         }
     }

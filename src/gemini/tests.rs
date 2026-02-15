@@ -2,12 +2,14 @@ use std::env;
 
 use futures::StreamExt;
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     client::{Message, Model, Settings, StreamEvent, Tool, Usage},
     gemini::{
-        direct_api_client::GeminiApiModel, types::GeminiModel, vertex_client::GeminiVertexModel,
+        direct_api_client::GeminiApiModel,
+        types::{GeminiModel, GeminiTool},
+        vertex_client::GeminiVertexModel,
     },
 };
 
@@ -358,4 +360,74 @@ async fn test_stream_function_call_direct() {
         got_function_call,
         "should have received a FunctionCall event"
     );
+}
+
+#[test]
+fn test_gemini_tool_converts_nullable_types() {
+    #[derive(JsonSchema, Serialize, Deserialize)]
+    struct ReadInput {
+        filepath: String,
+        offset: Option<u32>,
+        limit: Option<u32>,
+    }
+
+    let tool = Tool::new("read", "Read a file")
+        .with_parameter::<ReadInput>()
+        .unwrap();
+    let gemini_tool = GeminiTool::from_tool(&tool);
+    let json = serde_json::to_value(&gemini_tool).unwrap();
+
+    let params = json.get("parameters").unwrap();
+    let props = params.get("properties").unwrap();
+
+    // filepath should be a simple STRING
+    let filepath = props.get("filepath").unwrap();
+    assert_eq!(filepath.get("type").unwrap(), "STRING");
+    assert!(filepath.get("nullable").is_none());
+
+    // offset should be INTEGER + nullable
+    let offset = props.get("offset").unwrap();
+    assert_eq!(offset.get("type").unwrap(), "INTEGER");
+    assert_eq!(offset.get("nullable").unwrap(), true);
+    // Should NOT have format or minimum
+    assert!(offset.get("format").is_none());
+    assert!(offset.get("minimum").is_none());
+
+    // limit should be INTEGER + nullable
+    let limit = props.get("limit").unwrap();
+    assert_eq!(limit.get("type").unwrap(), "INTEGER");
+    assert_eq!(limit.get("nullable").unwrap(), true);
+
+    // Top level type should be OBJECT
+    assert_eq!(params.get("type").unwrap(), "OBJECT");
+}
+
+#[test]
+fn test_gemini_tool_converts_nested_objects() {
+    #[derive(JsonSchema, Serialize, Deserialize)]
+    struct Inner {
+        name: String,
+        count: Option<i32>,
+    }
+
+    #[derive(JsonSchema, Serialize, Deserialize)]
+    struct Outer {
+        inner: Inner,
+        tags: Vec<String>,
+    }
+
+    let tool = Tool::new("test", "Test tool")
+        .with_parameter::<Outer>()
+        .unwrap();
+    let gemini_tool = GeminiTool::from_tool(&tool);
+    let json = serde_json::to_value(&gemini_tool).unwrap();
+
+    let params = json.get("parameters").unwrap();
+    let props = params.get("properties").unwrap();
+
+    // tags should be ARRAY
+    let tags = props.get("tags").unwrap();
+    assert_eq!(tags.get("type").unwrap(), "ARRAY");
+    let items = tags.get("items").unwrap();
+    assert_eq!(items.get("type").unwrap(), "STRING");
 }

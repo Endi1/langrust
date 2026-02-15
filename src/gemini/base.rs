@@ -5,10 +5,12 @@ use std::error::Error;
 use reqwest::RequestBuilder;
 
 use crate::{
-    client::{Completion, FunctionCall, ModelRequest, Role, StreamEvent, StreamResult, Usage},
+    client::{
+        Completion, FunctionCall, MessageType, ModelRequest, Role, StreamEvent, StreamResult, Usage,
+    },
     gemini::types::{
-        Content, GeminiRequest, GeminiResponse, GeminiTool, GeminiTools, GenerationConfig, Part,
-        SystemInstructionContent, ThinkingConfig,
+        Content, FunctionCallPart, FunctionResponsePart, GeminiRequest, GeminiResponse, GeminiTool,
+        GeminiTools, GenerationConfig, Part, SystemInstructionContent, ThinkingConfig,
     },
 };
 
@@ -42,16 +44,36 @@ pub trait GeminiClient {
             .clone()
             .unwrap_or(vec![])
             .iter()
-            .map(|message| Content {
-                parts: Vec::from([Part {
-                    text: message.content.clone(),
-                }]),
-                role: message.role.clone().unwrap_or_else(|| Role::User),
+            .map(|message| match &message.message_type {
+                MessageType::Text => Content {
+                    parts: vec![Part::Text {
+                        text: message.content.clone(),
+                    }],
+                    role: message.role.clone().unwrap_or_else(|| Role::User),
+                },
+                MessageType::FunctionCall(fc) => Content {
+                    parts: vec![Part::FunctionCall {
+                        function_call: FunctionCallPart {
+                            name: fc.name.clone(),
+                            args: fc.args.clone(),
+                        },
+                    }],
+                    role: Role::Model,
+                },
+                MessageType::FunctionResponse { name, response } => Content {
+                    parts: vec![Part::FunctionResponse {
+                        function_response: FunctionResponsePart {
+                            name: name.clone(),
+                            response: response.clone().unwrap_or(serde_json::Value::Null),
+                        },
+                    }],
+                    role: Role::User,
+                },
             })
             .collect();
 
         let system_instruction = request.system.clone().map(|m| SystemInstructionContent {
-            parts: vec![Part { text: m }],
+            parts: vec![Part::Text { text: m }],
         });
 
         let req = GeminiRequest {

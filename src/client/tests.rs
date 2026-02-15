@@ -259,6 +259,6 @@ fn test_message_function_call() {
 #[test]
 fn test_message_function_result() {
     let msg = Message::function_result("search".to_string(), vec!["result1", "result2"]);
-    assert_eq!(msg.role, Some(Role::Model));
+    assert_eq!(msg.role, Some(Role::User));
     assert!(msg.content.contains("search"));
 }

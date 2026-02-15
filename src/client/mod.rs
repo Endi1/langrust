@@ -47,25 +47,28 @@ pub enum Role {
     User,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessageType {
+    Text,
+    FunctionCall(FunctionCall),
+    FunctionResponse {
+        name: String,
+        response: Option<serde_json::Value>,
+    },
+}
+
+impl Default for MessageType {
+    fn default() -> Self {
+        MessageType::Text
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {
     pub content: String,
     pub role: Option<Role>,
-}
-
-#[derive(Serialize)]
-pub struct FunctionResponse {
-    name: String,
-    response: Option<serde_json::Value>,
-}
-
-impl FunctionResponse {
-    fn new(name: String, response: Option<serde_json::Value>) -> FunctionResponse {
-        Self {
-            name: name,
-            response: response,
-        }
-    }
+    #[serde(skip)]
+    pub message_type: MessageType,
 }
 
 impl Message {
@@ -73,6 +76,7 @@ impl Message {
         Message {
             content: content,
             role: Some(Role::User),
+            message_type: MessageType::Text,
         }
     }
 
@@ -80,22 +84,30 @@ impl Message {
         Message {
             content: content,
             role: Some(Role::Model),
+            message_type: MessageType::Text,
         }
     }
 
     pub fn function_call(function_call: FunctionCall) -> Message {
+        let content = serde_json::to_string(&function_call).unwrap();
         Message {
-            content: serde_json::to_string(&function_call).unwrap(),
+            content,
             role: Some(Role::Model),
+            message_type: MessageType::FunctionCall(function_call),
         }
     }
 
     pub fn function_result<T: Serialize>(name: String, value: T) -> Message {
-        let function_response = serde_json::to_value(&value).ok();
+        let response = serde_json::to_value(&value).ok();
+        let content = serde_json::json!({
+            "name": name,
+            "response": response,
+        })
+        .to_string();
         Message {
-            content: serde_json::to_string(&FunctionResponse::new(name, function_response))
-                .unwrap(),
-            role: Some(Role::Model),
+            content,
+            role: Some(Role::User),
+            message_type: MessageType::FunctionResponse { name, response },
         }
     }
 }
