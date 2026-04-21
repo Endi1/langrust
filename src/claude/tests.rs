@@ -12,85 +12,26 @@ use crate::{
     client::{Message, Model, Settings, StreamEvent, Tool, Usage},
 };
 
-#[tokio::test]
-async fn test_generate_content_direct() {
-    let model = ClaudeApiModel {
+fn make_model(model: ClaudeModel) -> ClaudeApiModel {
+    ClaudeApiModel {
         client: reqwest::Client::new(),
-        api_key: env::var("CLAUDE_KEY").unwrap(),
-        model: ClaudeModel::Sonnet4_5,
-    };
-    let response = model
-        .new_request()
-        .with_system("you are a helpful assistant".to_string())
-        .with_message(Message::user("hello, how are you?".to_string()))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
-        .completion()
-        .await;
-    assert!(response.is_ok());
+        api_key: env::var("CLAUDE_KEY").expect("CLAUDE_KEY env var must be set"),
+        model,
+    }
 }
 
-#[tokio::test]
-async fn test_with_messages_claude_direct() {
-    let model = ClaudeApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("CLAUDE_KEY").unwrap(),
-        model: ClaudeModel::Sonnet4_5,
-    };
-    let messages = vec![
-        Message::user("hello, how are you?".to_string()),
-        Message::model("I am fine, and you?".to_string()),
-    ];
-    let mut binding = model.new_request();
-    let request_builder = binding
-        .with_system("you are a helpful assistant".to_string())
-        .with_messages(messages)
-        .with_message(Message::user("I am fine, thanks for asking".to_string()))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        });
-
-    let response = request_builder.completion().await;
-
-    assert!(response.is_ok());
+fn default_settings() -> Settings {
+    Settings {
+        max_tokens: Some(8000),
+        timeout: None,
+        temperature: None,
+        thinking_budget: None,
+    }
 }
 
-#[tokio::test]
-async fn test_claude_direct_function_call() {
-    let model = ClaudeApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("CLAUDE_KEY").unwrap(),
-        model: ClaudeModel::Sonnet4_5,
-    };
-
-    let tool = Tool::new("get_weather", "Get the weather for a city")
-        .with_parameter::<WeatherRequest>()
-        .unwrap();
-
-    let response = model
-        .new_request()
-        .with_system("you are a helpful assistant".to_string())
-        .with_message(Message::user(
-            "What is the weather like in Paris?".to_string(),
-        ))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
-        .with_tool(tool)
-        .completion()
-        .await;
-    assert!(response.is_ok());
-    assert!(response.unwrap().function.unwrap().name == "get_weather".to_string());
+#[derive(Deserialize, Serialize, JsonSchema)]
+struct WeatherRequest {
+    city: String,
 }
 
 struct ExecutableTool<A, R> {
@@ -102,7 +43,7 @@ impl<A, R> ExecutableTool<A, R> {
     pub fn new(tool: &Tool, executable: fn(A) -> R) -> ExecutableTool<A, R> {
         ExecutableTool {
             tool: tool.clone(),
-            executable: executable,
+            executable,
         }
     }
     pub fn run(self, arg: A) -> R {
@@ -110,19 +51,57 @@ impl<A, R> ExecutableTool<A, R> {
     }
 }
 
-#[derive(Deserialize, JsonSchema)]
-struct WeatherRequest {
-    city: String,
+async fn run_generate_content(model: ClaudeModel) {
+    let m = make_model(model);
+    let response = m
+        .new_request()
+        .with_system("you are a helpful assistant".to_string())
+        .with_message(Message::user("hello, how are you?".to_string()))
+        .with_settings(default_settings())
+        .completion()
+        .await;
+    assert!(response.is_ok(), "completion failed: {:?}", response.err());
 }
 
-#[tokio::test]
-async fn test_function_execution() {
-    let model = ClaudeApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("CLAUDE_KEY").unwrap(),
-        model: ClaudeModel::Sonnet4_5,
-    };
+async fn run_with_messages(model: ClaudeModel) {
+    let m = make_model(model);
+    let messages = vec![
+        Message::user("hello, how are you?".to_string()),
+        Message::model("I am fine, and you?".to_string()),
+    ];
+    let mut binding = m.new_request();
+    let request_builder = binding
+        .with_system("you are a helpful assistant".to_string())
+        .with_messages(messages)
+        .with_message(Message::user("I am fine, thanks for asking".to_string()))
+        .with_settings(default_settings());
 
+    let response = request_builder.completion().await;
+    assert!(response.is_ok(), "completion failed: {:?}", response.err());
+}
+
+async fn run_function_call(model: ClaudeModel) {
+    let m = make_model(model);
+    let tool = Tool::new("get_weather", "Get the weather for a city")
+        .with_parameter::<WeatherRequest>()
+        .unwrap();
+
+    let response = m
+        .new_request()
+        .with_system("you are a helpful assistant".to_string())
+        .with_message(Message::user(
+            "What is the weather like in Paris?".to_string(),
+        ))
+        .with_settings(default_settings())
+        .with_tool(tool)
+        .completion()
+        .await;
+    assert!(response.is_ok(), "completion failed: {:?}", response.err());
+    assert_eq!(response.unwrap().function.unwrap().name, "get_weather");
+}
+
+async fn run_function_execution(model: ClaudeModel) {
+    let m = make_model(model);
     let tool = Tool::new("get_weather", "Get the weather for a city")
         .with_parameter::<WeatherRequest>()
         .unwrap();
@@ -132,50 +111,32 @@ async fn test_function_execution() {
             format!("The weather in {} is great!", arg.city)
         });
 
-    let response = model
+    let response = m
         .new_request()
         .with_system("you are a helpful assistant".to_string())
         .with_message(Message::user(
             "What is the weather like in Paris?".to_string(),
         ))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
+        .with_settings(default_settings())
         .with_tool(weather_tool.tool.clone())
         .completion()
         .await;
-    assert!(response.is_ok());
+    assert!(response.is_ok(), "completion failed: {:?}", response.err());
     let function = response.unwrap().function.unwrap();
-    let args = function.args;
-
     let parsed_args: WeatherRequest =
-        serde_json::from_value(serde_json::to_value(args).unwrap()).unwrap();
+        serde_json::from_value(serde_json::to_value(function.args).unwrap()).unwrap();
 
     let function_response = weather_tool.run(parsed_args);
-    assert!(function_response == "The weather in Paris is great!".to_string());
+    assert_eq!(function_response, "The weather in Paris is great!");
 }
 
-#[tokio::test]
-async fn test_stream_generate_content_direct() {
-    let model = ClaudeApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("CLAUDE_KEY").unwrap(),
-        model: ClaudeModel::Sonnet4_5,
-    };
-
-    let mut stream = model
+async fn run_stream_generate_content(model: ClaudeModel) {
+    let m = make_model(model);
+    let mut stream = m
         .new_request()
         .with_system("you are a helpful assistant".to_string())
         .with_message(Message::user("hello, how are you?".to_string()))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
+        .with_settings(default_settings())
         .stream()
         .await
         .expect("stream request should succeed");
@@ -210,37 +171,25 @@ async fn test_stream_generate_content_direct() {
     assert!(!full_text.is_empty(), "streamed text should not be empty");
 }
 
-#[tokio::test]
-async fn test_stream_function_call_direct() {
-    let model = ClaudeApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("CLAUDE_KEY").unwrap(),
-        model: ClaudeModel::Sonnet4_5,
-    };
-
+async fn run_stream_function_call(model: ClaudeModel) {
+    let m = make_model(model);
     let tool = Tool::new("get_weather", "Get the weather for a city")
         .with_parameter::<WeatherRequest>()
         .unwrap();
 
-    let mut stream = model
+    let mut stream = m
         .new_request()
         .with_system("you are a helpful assistant".to_string())
         .with_message(Message::user(
             "What is the weather like in Paris?".to_string(),
         ))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
+        .with_settings(default_settings())
         .with_tool(tool)
         .stream()
         .await
         .expect("stream request should succeed");
 
     let mut got_function_call = false;
-
     while let Some(event) = stream.next().await {
         match event {
             StreamEvent::FunctionCall(fc) => {
@@ -258,10 +207,47 @@ async fn test_stream_function_call_direct() {
     );
 }
 
-// ----------------------------------------------------------------------------
-// Pure unit tests for tool-schema conversion. Unlike Gemini, Anthropic accepts
-// plain JSON Schema, so these verify the schema is passed through unchanged.
-// ----------------------------------------------------------------------------
+macro_rules! claude_model_suite {
+    ($mod_name:ident, $model:expr) => {
+        mod $mod_name {
+            use super::*;
+
+            #[tokio::test]
+            async fn generate_content() {
+                run_generate_content($model).await;
+            }
+
+            #[tokio::test]
+            async fn with_messages() {
+                run_with_messages($model).await;
+            }
+
+            #[tokio::test]
+            async fn function_call() {
+                run_function_call($model).await;
+            }
+
+            #[tokio::test]
+            async fn function_execution() {
+                run_function_execution($model).await;
+            }
+
+            #[tokio::test]
+            async fn stream_generate_content() {
+                run_stream_generate_content($model).await;
+            }
+
+            #[tokio::test]
+            async fn stream_function_call() {
+                run_stream_function_call($model).await;
+            }
+        }
+    };
+}
+
+claude_model_suite!(sonnet_4_5, ClaudeModel::Sonnet4_5);
+claude_model_suite!(opus_4_6, ClaudeModel::Opus4_6);
+claude_model_suite!(opus_4_7, ClaudeModel::Opus4_7);
 
 #[test]
 fn test_claude_tool_passes_through_nullable_types() {
@@ -347,7 +333,10 @@ fn test_claude_tool_emits_required_and_name_and_description() {
     let json = serde_json::to_value(&claude_tool).unwrap();
 
     assert_eq!(json.get("name").unwrap(), "get_weather");
-    assert_eq!(json.get("description").unwrap(), "Get the weather for a city");
+    assert_eq!(
+        json.get("description").unwrap(),
+        "Get the weather for a city"
+    );
 
     let schema = json.get("input_schema").unwrap();
     let required = schema.get("required").unwrap().as_array().unwrap();

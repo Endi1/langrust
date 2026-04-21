@@ -13,134 +13,35 @@ use crate::{
     },
 };
 
-#[tokio::test]
-async fn test_generate_content_vertex() {
-    let model = GeminiVertexModel {
-        region: env::var("VERTEX_REGION").unwrap(),
-        project_name: env::var("VERTEX_PROJECT").unwrap(),
+fn make_direct(model: GeminiModel) -> GeminiApiModel {
+    GeminiApiModel {
         client: reqwest::Client::new(),
-        model: GeminiModel::Gemini25Flash,
-    };
-
-    let response = model
-        .new_request()
-        .with_message(Message::user("hello, how are you?".to_string()))
-        .completion()
-        .await;
-    assert!(response.is_ok());
+        api_key: env::var("GEMINI_KEY").expect("GEMINI_KEY env var must be set"),
+        model,
+    }
 }
 
-#[tokio::test]
-async fn test_generate_content_direct() {
-    let model = GeminiApiModel {
+fn make_vertex(model: GeminiModel) -> GeminiVertexModel {
+    GeminiVertexModel {
+        region: env::var("VERTEX_REGION").expect("VERTEX_REGION env var must be set"),
+        project_name: env::var("VERTEX_PROJECT").expect("VERTEX_PROJECT env var must be set"),
         client: reqwest::Client::new(),
-        api_key: env::var("GEMINI_KEY").unwrap(),
-        model: GeminiModel::Gemini25Flash,
-    };
-    let response = model
-        .new_request()
-        .with_system("you are a helpful assistant".to_string())
-        .with_message(Message::user("hello, how are you?".to_string()))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
-        .completion()
-        .await;
-    assert!(response.is_ok());
+        model,
+    }
 }
 
-#[tokio::test]
-async fn test_with_messages_gemini_direct() {
-    let model = GeminiApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("GEMINI_KEY").unwrap(),
-        model: GeminiModel::Gemini25Flash,
-    };
-    let messages = vec![
-        Message::user("hello, how are you?".to_string()),
-        Message::model("I am fine, and you?".to_string()),
-    ];
-    let mut binding = model.new_request();
-    let request_builder = binding
-        .with_system("you are a helpful assistant".to_string())
-        .with_messages(messages)
-        .with_message(Message::user("I am fine, thanks for asking".to_string()))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        });
-
-    let response = request_builder.completion().await;
-
-    assert!(response.is_ok());
+fn default_settings() -> Settings {
+    Settings {
+        max_tokens: Some(8000),
+        timeout: None,
+        temperature: None,
+        thinking_budget: None,
+    }
 }
 
-#[tokio::test]
-async fn test_gemini_direct_function_call() {
-    let model = GeminiApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("GEMINI_KEY").unwrap(),
-        model: GeminiModel::Gemini25Flash,
-    };
-
-    let tool = Tool::new("get_weather", "Get the weather for a city")
-        .with_parameter::<WeatherRequest>()
-        .unwrap();
-
-    let response = model
-        .new_request()
-        .with_system("you are a helpful assistant".to_string())
-        .with_message(Message::user(
-            "What is the weather like in Paris?".to_string(),
-        ))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
-        .with_tool(tool)
-        .completion()
-        .await;
-    assert!(response.is_ok());
-    assert!(response.unwrap().function.unwrap().name == "get_weather".to_string());
-}
-
-#[tokio::test]
-async fn test_gemini_vertex_function_call() {
-    let model = GeminiVertexModel {
-        region: env::var("VERTEX_REGION").unwrap(),
-        project_name: env::var("VERTEX_PROJECT").unwrap(),
-        client: reqwest::Client::new(),
-        model: GeminiModel::Gemini25Flash,
-    };
-
-    let tool = Tool::new("get_weather", "Get the weather for a city")
-        .with_parameter::<WeatherRequest>()
-        .unwrap();
-
-    let response = model
-        .new_request()
-        .with_system("you are a helpful assistant".to_string())
-        .with_message(Message::user(
-            "What is the weather like in Paris?".to_string(),
-        ))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
-        .with_tool(tool)
-        .completion()
-        .await;
-    assert!(response.is_ok());
-    assert!(response.unwrap().function.unwrap().name == "get_weather".to_string());
+#[derive(Deserialize, Serialize, JsonSchema)]
+struct WeatherRequest {
+    city: String,
 }
 
 struct ExecutableTool<A, R> {
@@ -152,7 +53,7 @@ impl<A, R> ExecutableTool<A, R> {
     pub fn new(tool: &Tool, executable: fn(A) -> R) -> ExecutableTool<A, R> {
         ExecutableTool {
             tool: tool.clone(),
-            executable: executable,
+            executable,
         }
     }
     pub fn run(self, arg: A) -> R {
@@ -160,20 +61,53 @@ impl<A, R> ExecutableTool<A, R> {
     }
 }
 
-#[derive(Deserialize, JsonSchema)]
-struct WeatherRequest {
-    city: String,
+async fn run_generate_content<M: Model>(m: &M) {
+    let response = m
+        .new_request()
+        .with_system("you are a helpful assistant".to_string())
+        .with_message(Message::user("hello, how are you?".to_string()))
+        .with_settings(default_settings())
+        .completion()
+        .await;
+    assert!(response.is_ok(), "completion failed: {:?}", response.err());
 }
 
-#[tokio::test]
-async fn test_function_execution() {
-    let model = GeminiVertexModel {
-        region: env::var("VERTEX_REGION").unwrap(),
-        project_name: env::var("VERTEX_PROJECT").unwrap(),
-        client: reqwest::Client::new(),
-        model: GeminiModel::Gemini25Flash,
-    };
+async fn run_with_messages<M: Model>(m: &M) {
+    let messages = vec![
+        Message::user("hello, how are you?".to_string()),
+        Message::model("I am fine, and you?".to_string()),
+    ];
+    let mut binding = m.new_request();
+    let request_builder = binding
+        .with_system("you are a helpful assistant".to_string())
+        .with_messages(messages)
+        .with_message(Message::user("I am fine, thanks for asking".to_string()))
+        .with_settings(default_settings());
 
+    let response = request_builder.completion().await;
+    assert!(response.is_ok(), "completion failed: {:?}", response.err());
+}
+
+async fn run_function_call<M: Model>(m: &M) {
+    let tool = Tool::new("get_weather", "Get the weather for a city")
+        .with_parameter::<WeatherRequest>()
+        .unwrap();
+
+    let response = m
+        .new_request()
+        .with_system("you are a helpful assistant".to_string())
+        .with_message(Message::user(
+            "What is the weather like in Paris?".to_string(),
+        ))
+        .with_settings(default_settings())
+        .with_tool(tool)
+        .completion()
+        .await;
+    assert!(response.is_ok(), "completion failed: {:?}", response.err());
+    assert_eq!(response.unwrap().function.unwrap().name, "get_weather");
+}
+
+async fn run_function_execution<M: Model>(m: &M) {
     let tool = Tool::new("get_weather", "Get the weather for a city")
         .with_parameter::<WeatherRequest>()
         .unwrap();
@@ -183,50 +117,31 @@ async fn test_function_execution() {
             format!("The weather in {} is great!", arg.city)
         });
 
-    let response = model
+    let response = m
         .new_request()
         .with_system("you are a helpful assistant".to_string())
         .with_message(Message::user(
             "What is the weather like in Paris?".to_string(),
         ))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
+        .with_settings(default_settings())
         .with_tool(weather_tool.tool.clone())
         .completion()
         .await;
-    assert!(response.is_ok());
+    assert!(response.is_ok(), "completion failed: {:?}", response.err());
     let function = response.unwrap().function.unwrap();
-    let args = function.args;
-
     let parsed_args: WeatherRequest =
-        serde_json::from_value(serde_json::to_value(args).unwrap()).unwrap();
+        serde_json::from_value(serde_json::to_value(function.args).unwrap()).unwrap();
 
     let function_response = weather_tool.run(parsed_args);
-    assert!(function_response == "The weather in Paris is great!".to_string());
+    assert_eq!(function_response, "The weather in Paris is great!");
 }
 
-#[tokio::test]
-async fn test_stream_generate_content_direct() {
-    let model = GeminiApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("GEMINI_KEY").unwrap(),
-        model: GeminiModel::Gemini25Flash,
-    };
-
-    let mut stream = model
+async fn run_stream_generate_content<M: Model>(m: &M) {
+    let mut stream = m
         .new_request()
         .with_system("you are a helpful assistant".to_string())
         .with_message(Message::user("hello, how are you?".to_string()))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
+        .with_settings(default_settings())
         .stream()
         .await
         .expect("stream request should succeed");
@@ -261,90 +176,24 @@ async fn test_stream_generate_content_direct() {
     assert!(!full_text.is_empty(), "streamed text should not be empty");
 }
 
-#[tokio::test]
-async fn test_stream_generate_content_vertex() {
-    let model = GeminiVertexModel {
-        region: env::var("VERTEX_REGION").unwrap(),
-        project_name: env::var("VERTEX_PROJECT").unwrap(),
-        client: reqwest::Client::new(),
-        model: GeminiModel::Gemini25Flash,
-    };
-
-    let mut stream = model
-        .new_request()
-        .with_system("you are a helpful assistant".to_string())
-        .with_message(Message::user("hello, how are you?".to_string()))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
-        .stream()
-        .await
-        .expect("stream request should succeed");
-
-    let mut got_delta = false;
-    let mut got_usage = false;
-    let mut full_text = String::new();
-
-    while let Some(event) = stream.next().await {
-        match event {
-            StreamEvent::Delta(text) => {
-                got_delta = true;
-                full_text.push_str(&text);
-            }
-            StreamEvent::Usage(Usage {
-                prompt_tokens,
-                completion_tokens,
-                total_tokens,
-            }) => {
-                got_usage = true;
-                assert!(prompt_tokens > 0);
-                assert!(completion_tokens > 0);
-                assert!(total_tokens > 0);
-            }
-            StreamEvent::FunctionCall(_) => {}
-            StreamEvent::Error(e) => panic!("stream event should not be an error: {}", e),
-        }
-    }
-
-    assert!(got_delta, "should have received at least one Delta event");
-    assert!(got_usage, "should have received a Usage event");
-    assert!(!full_text.is_empty(), "streamed text should not be empty");
-}
-
-#[tokio::test]
-async fn test_stream_function_call_direct() {
-    let model = GeminiApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("GEMINI_KEY").unwrap(),
-        model: GeminiModel::Gemini25Flash,
-    };
-
+async fn run_stream_function_call<M: Model>(m: &M) {
     let tool = Tool::new("get_weather", "Get the weather for a city")
         .with_parameter::<WeatherRequest>()
         .unwrap();
 
-    let mut stream = model
+    let mut stream = m
         .new_request()
         .with_system("you are a helpful assistant".to_string())
         .with_message(Message::user(
             "What is the weather like in Paris?".to_string(),
         ))
-        .with_settings(Settings {
-            max_tokens: Some(8000),
-            timeout: None,
-            temperature: None,
-            thinking_budget: None,
-        })
+        .with_settings(default_settings())
         .with_tool(tool)
         .stream()
         .await
         .expect("stream request should succeed");
 
     let mut got_function_call = false;
-
     while let Some(event) = stream.next().await {
         match event {
             StreamEvent::FunctionCall(fc) => {
@@ -360,6 +209,56 @@ async fn test_stream_function_call_direct() {
         got_function_call,
         "should have received a FunctionCall event"
     );
+}
+
+macro_rules! gemini_model_suite {
+    ($mod_name:ident, $factory:ident, $model:expr) => {
+        mod $mod_name {
+            use super::*;
+
+            #[tokio::test]
+            async fn generate_content() {
+                run_generate_content(&$factory($model)).await;
+            }
+
+            #[tokio::test]
+            async fn with_messages() {
+                run_with_messages(&$factory($model)).await;
+            }
+
+            #[tokio::test]
+            async fn function_call() {
+                run_function_call(&$factory($model)).await;
+            }
+
+            #[tokio::test]
+            async fn function_execution() {
+                run_function_execution(&$factory($model)).await;
+            }
+
+            #[tokio::test]
+            async fn stream_generate_content() {
+                run_stream_generate_content(&$factory($model)).await;
+            }
+
+            #[tokio::test]
+            async fn stream_function_call() {
+                run_stream_function_call(&$factory($model)).await;
+            }
+        }
+    };
+}
+
+// Direct Gemini API (uses GEMINI_KEY).
+mod direct {
+    use super::*;
+    gemini_model_suite!(gemini_2_5_flash, make_direct, GeminiModel::Gemini25Flash);
+}
+
+// Vertex AI (uses VERTEX_REGION + VERTEX_PROJECT + gcloud ADC).
+mod vertex {
+    use super::*;
+    gemini_model_suite!(gemini_2_5_flash, make_vertex, GeminiModel::Gemini25Flash);
 }
 
 #[test]
