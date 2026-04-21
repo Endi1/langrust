@@ -23,14 +23,14 @@ impl Model for ClaudeApiModel {
         &self,
         request: ModelRequest,
     ) -> Result<Completion, Box<dyn Error + Send + Sync>> {
-        self.create_message(request).await
+        self.generate_content(request).await
     }
 
     async fn stream_completion(
         &self,
         request: ModelRequest,
     ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
-        self.stream_create_message(request).await
+        self.stream_generate_content(request).await
     }
 }
 

@@ -96,7 +96,7 @@ pub trait ClaudeClient {
         }
     }
 
-    async fn create_message(
+    async fn generate_content(
         &self,
         request: ModelRequest,
     ) -> Result<Completion, Box<dyn Error + Send + Sync>> {
@@ -138,7 +138,7 @@ pub trait ClaudeClient {
         })
     }
 
-    async fn stream_create_message(
+    async fn stream_generate_content(
         &self,
         request: ModelRequest,
     ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
