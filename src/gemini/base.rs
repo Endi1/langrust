@@ -17,17 +17,11 @@ use crate::{
 pub trait GeminiClient {
     fn model(&self) -> String;
     fn create_request_body(&self, request: ModelRequest) -> GeminiRequest {
-        let thinking_config = if !self.model().contains("1.5") && !self.model().contains("2.0") {
-            Some(ThinkingConfig {
-                thinking_budget: request
-                    .settings
-                    .clone()
-                    .map(|s| s.thinking_budget.unwrap_or_default())
-                    .unwrap_or_default(),
-            })
-        } else {
-            None
-        };
+        let thinking_config = request
+            .settings
+            .as_ref()
+            .and_then(|s| s.thinking_budget)
+            .map(|thinking_budget| ThinkingConfig { thinking_budget });
 
         let generation_config = GenerationConfig {
             max_output_tokens: request.settings.clone().and_then(|s| s.max_tokens),
@@ -124,22 +118,9 @@ pub trait GeminiClient {
                     "Missing completion from response".into()
                 })?;
 
-        let prompt_tokens =
-            response_body
-                .get_prompt_tokens()
-                .ok_or_else(|| -> Box<dyn Error + Send + Sync> {
-                    "Missing prompt tokens from response".into()
-                })?;
-
-        let completion_tokens = response_body.get_completion_tokens().ok_or_else(
-            || -> Box<dyn Error + Send + Sync> { "Missing completion tokens from response".into() },
-        )?;
-        let total_tokens =
-            response_body
-                .get_total_tokens()
-                .ok_or_else(|| -> Box<dyn Error + Send + Sync> {
-                    "Missing total tokens from response".into()
-                })?;
+        let prompt_tokens = response_body.get_prompt_tokens().unwrap_or(0);
+        let completion_tokens = response_body.get_completion_tokens().unwrap_or(0);
+        let total_tokens = response_body.get_total_tokens().unwrap_or(0);
 
         return Ok(Completion {
             completion: content,

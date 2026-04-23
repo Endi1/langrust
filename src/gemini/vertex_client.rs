@@ -12,7 +12,6 @@ use async_trait::async_trait;
 use reqwest::RequestBuilder;
 
 pub struct GeminiVertexModel {
-    pub region: String,
     pub project_name: String,
     pub client: reqwest::Client,
     pub model: GeminiModel,
@@ -43,8 +42,8 @@ impl GeminiClient for GeminiVertexModel {
 
     fn get_endpoint(&self, model: &String, method: String) -> String {
         return format!(
-            "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/google/models/{model}:{method}",
-            self.region, self.project_name, self.region
+            "https://aiplatform.googleapis.com/v1/projects/{}/locations/global/publishers/google/models/{model}:{method}",
+            self.project_name
         );
     }
 

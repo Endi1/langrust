@@ -7,12 +7,18 @@ use serde_json::Value;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GeminiModel {
     Gemini25Flash,
+    Gemini31Pro,
+    Gemini3Flash,
+    Gemini31FlashLite,
 }
 
 impl GeminiModel {
     pub fn to_string(&self) -> String {
         match self {
             GeminiModel::Gemini25Flash => "gemini-2.5-flash".to_string(),
+            GeminiModel::Gemini31Pro => "gemini-3.1-pro-preview".to_string(),
+            GeminiModel::Gemini3Flash => "gemini-3-flash-preview".to_string(),
+            GeminiModel::Gemini31FlashLite => "gemini-3.1-flash-lite-preview".to_string(),
         }
     }
 }
@@ -274,6 +280,7 @@ impl GeminiResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct Candidate {
+    #[serde(default)]
     pub content: ResponseContent,
     #[serde(rename = "finishReason")]
     #[allow(dead_code)]
@@ -282,8 +289,9 @@ pub struct Candidate {
     pub index: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct ResponseContent {
+    #[serde(default)]
     pub parts: Vec<ResponsePart>,
     #[allow(dead_code)]
     pub role: Option<String>,

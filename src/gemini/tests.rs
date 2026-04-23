@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     client::{Message, Model, Settings, StreamEvent, Tool, Usage},
     gemini::{
+        base::GeminiClient,
         direct_api_client::GeminiApiModel,
         types::{GeminiModel, GeminiTool},
         vertex_client::GeminiVertexModel,
@@ -23,7 +24,6 @@ fn make_direct(model: GeminiModel) -> GeminiApiModel {
 
 fn make_vertex(model: GeminiModel) -> GeminiVertexModel {
     GeminiVertexModel {
-        region: env::var("VERTEX_REGION").expect("VERTEX_REGION env var must be set"),
         project_name: env::var("VERTEX_PROJECT").expect("VERTEX_PROJECT env var must be set"),
         client: reqwest::Client::new(),
         model,
@@ -35,7 +35,9 @@ fn default_settings() -> Settings {
         max_tokens: Some(8000),
         timeout: None,
         temperature: None,
-        thinking_budget: None,
+        // Use dynamic thinking (-1) so thinking-only models like Gemini 3.1 Pro
+        // actually emit a completion. Non-thinking models ignore this.
+        thinking_budget: Some(-1),
     }
 }
 
@@ -97,7 +99,8 @@ async fn run_function_call<M: Model>(m: &M) {
         .new_request()
         .with_system("you are a helpful assistant".to_string())
         .with_message(Message::user(
-            "What is the weather like in Paris?".to_string(),
+            "Use the get_weather tool to look up the weather in Paris. You must call the tool."
+                .to_string(),
         ))
         .with_settings(default_settings())
         .with_tool(tool)
@@ -121,7 +124,8 @@ async fn run_function_execution<M: Model>(m: &M) {
         .new_request()
         .with_system("you are a helpful assistant".to_string())
         .with_message(Message::user(
-            "What is the weather like in Paris?".to_string(),
+            "Use the get_weather tool to look up the weather in Paris. You must call the tool."
+                .to_string(),
         ))
         .with_settings(default_settings())
         .with_tool(weather_tool.tool.clone())
@@ -185,7 +189,8 @@ async fn run_stream_function_call<M: Model>(m: &M) {
         .new_request()
         .with_system("you are a helpful assistant".to_string())
         .with_message(Message::user(
-            "What is the weather like in Paris?".to_string(),
+            "Use the get_weather tool to look up the weather in Paris. You must call the tool."
+                .to_string(),
         ))
         .with_settings(default_settings())
         .with_tool(tool)
@@ -253,12 +258,26 @@ macro_rules! gemini_model_suite {
 mod direct {
     use super::*;
     gemini_model_suite!(gemini_2_5_flash, make_direct, GeminiModel::Gemini25Flash);
+    gemini_model_suite!(gemini_3_1_pro, make_direct, GeminiModel::Gemini31Pro);
+    gemini_model_suite!(gemini_3_flash, make_direct, GeminiModel::Gemini3Flash);
+    gemini_model_suite!(
+        gemini_3_1_flash_lite,
+        make_direct,
+        GeminiModel::Gemini31FlashLite
+    );
 }
 
 // Vertex AI (uses VERTEX_REGION + VERTEX_PROJECT + gcloud ADC).
 mod vertex {
     use super::*;
     gemini_model_suite!(gemini_2_5_flash, make_vertex, GeminiModel::Gemini25Flash);
+    gemini_model_suite!(gemini_3_1_pro, make_vertex, GeminiModel::Gemini31Pro);
+    gemini_model_suite!(gemini_3_flash, make_vertex, GeminiModel::Gemini3Flash);
+    gemini_model_suite!(
+        gemini_3_1_flash_lite,
+        make_vertex,
+        GeminiModel::Gemini31FlashLite
+    );
 }
 
 #[test]
@@ -329,4 +348,173 @@ fn test_gemini_tool_converts_nested_objects() {
     assert_eq!(tags.get("type").unwrap(), "ARRAY");
     let items = tags.get("items").unwrap();
     assert_eq!(items.get("type").unwrap(), "STRING");
+}
+
+#[test]
+fn response_deserializes_when_content_has_no_parts() {
+    // Some Gemini 3.x responses (e.g. thinking-only turns, MAX_TOKENS, safety
+    // stops) return a candidate whose `content` has no `parts` field at all.
+    // We must not fail to decode in that case.
+    use crate::gemini::types::GeminiResponse;
+
+    let raw = r#"{
+        "candidates": [
+            {
+                "content": { "role": "model" },
+                "finishReason": "MAX_TOKENS",
+                "index": 0
+            }
+        ],
+        "usageMetadata": {
+            "promptTokenCount": 5,
+            "candidatesTokenCount": 0,
+            "totalTokenCount": 5
+        }
+    }"#;
+
+    let resp: GeminiResponse =
+        serde_json::from_str(raw).expect("response with no parts should still decode");
+    assert_eq!(resp.get_text().as_deref(), Some(""));
+    assert!(resp.get_function().is_none());
+    assert_eq!(resp.get_prompt_tokens(), Some(5));
+}
+
+#[test]
+fn response_with_partial_usage_metadata_reports_missing_counts_as_none() {
+    // Pure function-call responses from thinking models often only include
+    // `promptTokenCount` in `usageMetadata`. Make sure the getters return
+    // `None` for the missing counts (callers default them to 0) and the
+    // response still decodes.
+    use crate::gemini::types::GeminiResponse;
+
+    let raw = r#"{
+        "candidates": [
+            {
+                "content": {
+                    "role": "model",
+                    "parts": [
+                        { "functionCall": { "name": "get_weather", "args": { "city": "Paris" } } }
+                    ]
+                },
+                "finishReason": "STOP",
+                "index": 0
+            }
+        ],
+        "usageMetadata": {
+            "promptTokenCount": 12
+        }
+    }"#;
+
+    let resp: GeminiResponse =
+        serde_json::from_str(raw).expect("partial usage metadata should still decode");
+    assert_eq!(resp.get_prompt_tokens(), Some(12));
+    assert_eq!(resp.get_completion_tokens(), None);
+    assert_eq!(resp.get_total_tokens(), None);
+    let func = resp.get_function().expect("function call should be parsed");
+    assert_eq!(func.name, "get_weather");
+}
+
+#[test]
+fn response_deserializes_when_candidate_has_no_content() {
+    use crate::gemini::types::GeminiResponse;
+
+    let raw = r#"{
+        "candidates": [
+            { "finishReason": "SAFETY", "index": 0 }
+        ]
+    }"#;
+
+    let resp: GeminiResponse =
+        serde_json::from_str(raw).expect("response with no content should still decode");
+    assert_eq!(resp.get_text().as_deref(), Some(""));
+    assert!(resp.get_function().is_none());
+}
+
+fn make_direct_dummy(model: GeminiModel) -> GeminiApiModel {
+    GeminiApiModel {
+        client: reqwest::Client::new(),
+        api_key: "dummy".to_string(),
+        model,
+    }
+}
+
+fn request_with_thinking(thinking_budget: Option<i16>) -> crate::client::ModelRequest {
+    crate::client::ModelRequest {
+        system: None,
+        messages: Some(vec![Message::user("hi".to_string())]),
+        settings: Some(Settings {
+            max_tokens: Some(100),
+            timeout: None,
+            temperature: None,
+            thinking_budget,
+        }),
+        tools: None,
+    }
+}
+
+#[test]
+fn thinking_config_omitted_when_budget_is_none() {
+    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
+    let body = m.create_request_body(request_with_thinking(None));
+    assert!(
+        body.generation_config.thinking_config.is_none(),
+        "thinking_config should be omitted when thinking_budget is None"
+    );
+
+    // And the serialized form must not contain the key at all.
+    let json = serde_json::to_value(&body).unwrap();
+    let gen_cfg = json.get("generationConfig").unwrap();
+    assert!(
+        gen_cfg.get("thinkingConfig").is_none(),
+        "serialized generationConfig should not include thinkingConfig, got {}",
+        gen_cfg
+    );
+}
+
+#[test]
+fn thinking_config_omitted_when_settings_is_none() {
+    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
+    let req = crate::client::ModelRequest {
+        system: None,
+        messages: Some(vec![Message::user("hi".to_string())]),
+        settings: None,
+        tools: None,
+    };
+    let body = m.create_request_body(req);
+    assert!(body.generation_config.thinking_config.is_none());
+}
+
+#[test]
+fn thinking_config_set_when_budget_is_some() {
+    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
+    let body = m.create_request_body(request_with_thinking(Some(1024)));
+    let tc = body
+        .generation_config
+        .thinking_config
+        .as_ref()
+        .expect("thinking_config should be set when budget is provided");
+    assert_eq!(tc.thinking_budget, 1024);
+
+    let json = serde_json::to_value(&body).unwrap();
+    assert_eq!(
+        json.get("generationConfig")
+            .and_then(|g| g.get("thinkingConfig"))
+            .and_then(|t| t.get("thinkingBudget"))
+            .and_then(|v| v.as_i64()),
+        Some(1024)
+    );
+}
+
+#[test]
+fn thinking_config_supports_dynamic_budget() {
+    // Gemini uses -1 to signal "dynamic thinking". Make sure we pass it through.
+    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
+    let body = m.create_request_body(request_with_thinking(Some(-1)));
+    assert_eq!(
+        body.generation_config
+            .thinking_config
+            .as_ref()
+            .map(|t| t.thinking_budget),
+        Some(-1)
+    );
 }
