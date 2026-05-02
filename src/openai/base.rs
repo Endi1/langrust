@@ -10,8 +10,8 @@ use crate::{
         Completion, FunctionCall, MessageType, ModelRequest, StreamEvent, StreamResult, Usage,
     },
     openai::types::{
-        OpenAiFunctionCall, OpenAiMessage, OpenAiRequest, OpenAiResponse, OpenAiTool,
-        OpenAiToolCall, StreamChunk, StreamOptions, synth_tool_call_id,
+        OpenAiInputItem, OpenAiRequest, OpenAiResponse, OpenAiTool, ResponsesStreamEvent,
+        synth_call_id,
     },
 };
 
@@ -21,7 +21,7 @@ pub trait OpenAiClient {
     fn create_request_body(&self, request: ModelRequest, stream: bool) -> OpenAiRequest {
         let settings = request.settings.clone();
 
-        let max_completion_tokens = settings
+        let max_output_tokens = settings
             .as_ref()
             .and_then(|s| s.max_tokens)
             .map(|v| v as i32);
@@ -31,52 +31,38 @@ pub trait OpenAiClient {
             .and_then(|s| s.temperature)
             .map(|v| v as f32);
 
-        let mut messages: Vec<OpenAiMessage> = Vec::new();
-
-        if let Some(system) = request.system.clone() {
-            messages.push(OpenAiMessage::System {
-                role: "system",
-                content: system,
-            });
-        }
+        // Build input items (no system message — that goes to `instructions`).
+        let mut input: Vec<OpenAiInputItem> = Vec::new();
 
         for m in request.messages.clone().unwrap_or_default().iter() {
             match &m.message_type {
                 MessageType::Text => match m.role {
                     Some(crate::client::Role::Model) => {
-                        messages.push(OpenAiMessage::Assistant {
-                            role: "assistant",
-                            content: Some(m.content.clone()),
-                            tool_calls: None,
+                        input.push(OpenAiInputItem::Message {
+                            role: "assistant".to_string(),
+                            content: m.content.clone(),
                         });
                     }
                     _ => {
-                        messages.push(OpenAiMessage::User {
-                            role: "user",
+                        input.push(OpenAiInputItem::Message {
+                            role: "user".to_string(),
                             content: m.content.clone(),
                         });
                     }
                 },
                 MessageType::FunctionCall(fc) => {
-                    let arguments = serde_json::to_string(&fc.args).unwrap_or("{}".to_string());
-                    messages.push(OpenAiMessage::Assistant {
-                        role: "assistant",
-                        content: None,
-                        tool_calls: Some(vec![OpenAiToolCall {
-                            id: synth_tool_call_id(&fc.name),
-                            kind: "function",
-                            function: OpenAiFunctionCall {
-                                name: fc.name.clone(),
-                                arguments,
-                            },
-                        }]),
+                    let arguments =
+                        serde_json::to_string(&fc.args).unwrap_or("{}".to_string());
+                    input.push(OpenAiInputItem::FunctionCall {
+                        call_id: synth_call_id(&fc.name),
+                        name: fc.name.clone(),
+                        arguments,
                     });
                 }
                 MessageType::FunctionResponse { name, response } => {
-                    messages.push(OpenAiMessage::Tool {
-                        role: "tool",
-                        tool_call_id: synth_tool_call_id(name),
-                        content: response
+                    input.push(OpenAiInputItem::FunctionCallOutput {
+                        call_id: synth_call_id(name),
+                        output: response
                             .as_ref()
                             .map(|v| v.to_string())
                             .unwrap_or_else(|| "null".to_string()),
@@ -90,25 +76,17 @@ pub trait OpenAiClient {
             .clone()
             .map(|ts| ts.iter().map(OpenAiTool::from_tool).collect());
 
-        let (stream_flag, stream_options) = if stream {
-            (
-                Some(true),
-                Some(StreamOptions {
-                    include_usage: true,
-                }),
-            )
-        } else {
-            (None, None)
-        };
+        let stream_flag = if stream { Some(true) } else { None };
 
         OpenAiRequest {
             model: self.model(),
-            messages,
-            max_completion_tokens,
+            input,
+            instructions: request.system.clone(),
+            max_output_tokens,
             temperature,
             tools,
             stream: stream_flag,
-            stream_options,
+            store: false,
         }
     }
 
@@ -137,8 +115,8 @@ pub trait OpenAiClient {
         });
 
         let usage = body.usage.map(|u| Usage {
-            prompt_tokens: u.prompt_tokens,
-            completion_tokens: u.completion_tokens,
+            prompt_tokens: u.input_tokens,
+            completion_tokens: u.output_tokens,
             total_tokens: u.total_tokens,
         });
 
@@ -175,7 +153,6 @@ pub trait OpenAiClient {
         let state = State {
             sse,
             buffer: std::collections::VecDeque::new(),
-            tool_calls: HashMap::new(),
         };
 
         let out = stream::unfold(state, |mut state| async move {
@@ -192,19 +169,16 @@ pub trait OpenAiClient {
                             .push_back(StreamEvent::Error(e.to_string()));
                     }
                     Ok(event) => {
-                        if event.data.is_empty() || event.data == "[DONE]" {
-                            // On [DONE], emit any completed tool calls.
-                            if event.data == "[DONE]" {
-                                flush_tool_calls(&mut state);
-                            }
+                        if event.data.is_empty() {
                             continue;
                         }
-                        let parsed: Result<StreamChunk, _> = serde_json::from_str(&event.data);
+                        let parsed: Result<ResponsesStreamEvent, _> =
+                            serde_json::from_str(&event.data);
                         match parsed {
                             Err(e) => state
                                 .buffer
                                 .push_back(StreamEvent::Error(e.to_string())),
-                            Ok(chunk) => handle_chunk(chunk, &mut state),
+                            Ok(ev) => handle_stream_event(ev, &mut state),
                         }
                     }
                 }
@@ -223,79 +197,55 @@ pub trait OpenAiClient {
     ) -> Result<RequestBuilder, Box<dyn Error + Send + Sync>>;
 }
 
-fn handle_chunk(chunk: StreamChunk, state: &mut State) {
-    for choice in chunk.choices {
-        if let Some(text) = choice.delta.content {
-            if !text.is_empty() {
-                state.push_event(StreamEvent::Delta(text));
+fn handle_stream_event(event: ResponsesStreamEvent, state: &mut State) {
+    match event.event_type.as_str() {
+        "response.output_text.delta" => {
+            if let Some(delta) = event.delta {
+                if !delta.is_empty() {
+                    state.push_event(StreamEvent::Delta(delta));
+                }
             }
         }
-
-        if let Some(tool_calls) = choice.delta.tool_calls {
-            for tc in tool_calls {
-                let entry = state.tool_calls.entry(tc.index).or_insert_with(|| {
-                    ToolCallAcc {
-                        name: String::new(),
-                        arguments: String::new(),
-                    }
-                });
-                if let Some(func) = tc.function {
-                    if let Some(name) = func.name {
-                        if !name.is_empty() {
-                            entry.name.push_str(&name);
-                        }
-                    }
-                    if let Some(args) = func.arguments {
-                        entry.arguments.push_str(&args);
+        "response.output_item.done" => {
+            if let Some(item) = event.item {
+                if item.item_type.as_deref() == Some("function_call") {
+                    if let Some(name) = item.name {
+                        let args_str = item.arguments.unwrap_or_default();
+                        let args: HashMap<String, serde_json::Value> = if args_str.is_empty() {
+                            HashMap::new()
+                        } else {
+                            match serde_json::from_str(&args_str) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    state.push_event(StreamEvent::Error(format!(
+                                        "failed to parse streamed tool arguments JSON: {}",
+                                        e
+                                    )));
+                                    return;
+                                }
+                            }
+                        };
+                        state.push_event(StreamEvent::FunctionCall(FunctionCall {
+                            name,
+                            args,
+                        }));
                     }
                 }
             }
         }
-
-        if choice.finish_reason.is_some() {
-            // End of this choice — emit any accumulated tool calls.
-            flush_tool_calls(state);
-        }
-    }
-
-    if let Some(usage) = chunk.usage {
-        state.push_event(StreamEvent::Usage(Usage {
-            prompt_tokens: usage.prompt_tokens,
-            completion_tokens: usage.completion_tokens,
-            total_tokens: usage.total_tokens,
-        }));
-    }
-}
-
-fn flush_tool_calls(state: &mut State) {
-    if state.tool_calls.is_empty() {
-        return;
-    }
-    let mut indices: Vec<u32> = state.tool_calls.keys().copied().collect();
-    indices.sort();
-    for idx in indices {
-        if let Some(acc) = state.tool_calls.remove(&idx) {
-            if acc.name.is_empty() {
-                continue;
-            }
-            let args: HashMap<String, serde_json::Value> = if acc.arguments.is_empty() {
-                HashMap::new()
-            } else {
-                match serde_json::from_str(&acc.arguments) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        state.push_event(StreamEvent::Error(format!(
-                            "failed to parse streamed tool arguments JSON: {}",
-                            e
-                        )));
-                        continue;
-                    }
+        "response.completed" => {
+            if let Some(resp) = event.response {
+                if let Some(usage) = resp.usage {
+                    state.push_event(StreamEvent::Usage(Usage {
+                        prompt_tokens: usage.input_tokens,
+                        completion_tokens: usage.output_tokens,
+                        total_tokens: usage.total_tokens,
+                    }));
                 }
-            };
-            state.push_event(StreamEvent::FunctionCall(FunctionCall {
-                name: acc.name,
-                args,
-            }));
+            }
+        }
+        _ => {
+            // Ignore other event types (response.created, response.in_progress, etc.)
         }
     }
 }
@@ -312,12 +262,6 @@ struct State {
         >,
     >,
     buffer: std::collections::VecDeque<StreamEvent>,
-    tool_calls: HashMap<u32, ToolCallAcc>,
-}
-
-struct ToolCallAcc {
-    name: String,
-    arguments: String,
 }
 
 impl State {

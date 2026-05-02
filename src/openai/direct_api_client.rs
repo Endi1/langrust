@@ -40,7 +40,7 @@ impl OpenAiClient for OpenAiApiModel {
     }
 
     fn get_endpoint(&self) -> String {
-        "https://api.openai.com/v1/chat/completions".to_string()
+        "https://api.openai.com/v1/responses".to_string()
     }
 
     async fn build_request(

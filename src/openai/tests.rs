@@ -266,8 +266,10 @@ fn test_openai_tool_passes_through_nullable_types() {
     let json = serde_json::to_value(&openai_tool).unwrap();
 
     assert_eq!(json.get("type").unwrap(), "function");
-    let function = json.get("function").unwrap();
-    let schema = function.get("parameters").unwrap();
+    // Responses API uses flat/internally-tagged tool definitions
+    assert_eq!(json.get("name").unwrap(), "read");
+    assert_eq!(json.get("strict").unwrap(), false);
+    let schema = json.get("parameters").unwrap();
     // Top-level type is standard JSON Schema "object" (lowercase)
     assert_eq!(schema.get("type").unwrap(), "object");
 
@@ -306,7 +308,7 @@ fn test_openai_tool_preserves_nested_objects() {
     let openai_tool = OpenAiTool::from_tool(&tool);
     let json = serde_json::to_value(&openai_tool).unwrap();
 
-    let schema = json.get("function").unwrap().get("parameters").unwrap();
+    let schema = json.get("parameters").unwrap();
     assert_eq!(schema.get("type").unwrap(), "object");
 
     let props = schema.get("properties").unwrap();
@@ -330,14 +332,13 @@ fn test_openai_tool_emits_required_and_name_and_description() {
     let openai_tool = OpenAiTool::from_tool(&tool);
     let json = serde_json::to_value(&openai_tool).unwrap();
 
-    let function = json.get("function").unwrap();
-    assert_eq!(function.get("name").unwrap(), "get_weather");
+    assert_eq!(json.get("name").unwrap(), "get_weather");
     assert_eq!(
-        function.get("description").unwrap(),
+        json.get("description").unwrap(),
         "Get the weather for a city"
     );
 
-    let schema = function.get("parameters").unwrap();
+    let schema = json.get("parameters").unwrap();
     let required = schema.get("required").unwrap().as_array().unwrap();
     assert!(required.iter().any(|v| v == "city"));
 }
