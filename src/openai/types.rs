@@ -23,75 +23,53 @@ impl OpenAiModel {
     }
 }
 
-/// Deterministic synthesis of a `tool_call_id` from a function name.
+/// Deterministic synthesis of a `call_id` from a function name.
 ///
 /// NOTE: Same known limitation as in the Claude client — two calls to the
 /// same tool in the same assistant turn would collide. Resolving this
 /// properly requires an `id` field on the common `FunctionCall` type.
-pub fn synth_tool_call_id(name: &str) -> String {
+pub fn synth_call_id(name: &str) -> String {
     format!("call_{}", name)
 }
 
-// ---------------- Request types ----------------
+// ---------------- Request types (Responses API) ----------------
 
+/// Input items for the Responses API.
+/// Uses internal tagging via `type` field.
 #[derive(Serialize)]
-pub struct OpenAiFunctionCall {
-    pub name: String,
-    /// JSON-encoded arguments string (as required by OpenAI).
-    pub arguments: String,
-}
-
-#[derive(Serialize)]
-pub struct OpenAiToolCall {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub kind: &'static str, // "function"
-    pub function: OpenAiFunctionCall,
-}
-
-#[derive(Serialize)]
-#[serde(untagged)]
-pub enum OpenAiMessage {
-    System {
-        role: &'static str, // "system"
+#[serde(tag = "type")]
+pub enum OpenAiInputItem {
+    #[serde(rename = "message")]
+    Message {
+        role: String,
         content: String,
     },
-    User {
-        role: &'static str, // "user"
-        content: String,
+    #[serde(rename = "function_call")]
+    FunctionCall {
+        call_id: String,
+        name: String,
+        arguments: String,
     },
-    Assistant {
-        role: &'static str, // "assistant"
-        #[serde(skip_serializing_if = "Option::is_none")]
-        content: Option<String>,
-        #[serde(rename = "tool_calls", skip_serializing_if = "Option::is_none")]
-        tool_calls: Option<Vec<OpenAiToolCall>>,
-    },
-    Tool {
-        role: &'static str, // "tool"
-        #[serde(rename = "tool_call_id")]
-        tool_call_id: String,
-        content: String,
+    #[serde(rename = "function_call_output")]
+    FunctionCallOutput {
+        call_id: String,
+        output: String,
     },
 }
 
-#[derive(Serialize)]
-pub struct OpenAiFunctionDef {
-    pub name: String,
-    pub description: String,
-    pub parameters: Value,
-}
-
+/// Tool definition for the Responses API (internally tagged, flat structure).
 #[derive(Serialize)]
 pub struct OpenAiTool {
     #[serde(rename = "type")]
     pub kind: &'static str, // "function"
-    pub function: OpenAiFunctionDef,
+    pub name: String,
+    pub description: String,
+    pub parameters: Value,
+    pub strict: bool,
 }
 
 impl OpenAiTool {
     pub fn from_tool(tool: &Tool) -> OpenAiTool {
-        // OpenAI accepts standard JSON Schema directly, like Anthropic.
         let parameters = match &tool.parameters {
             Some(p) => {
                 let mut map = serde_json::Map::new();
@@ -116,153 +94,124 @@ impl OpenAiTool {
 
         OpenAiTool {
             kind: "function",
-            function: OpenAiFunctionDef {
-                name: tool.name.clone(),
-                description: tool.description.clone(),
-                parameters,
-            },
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+            parameters,
+            strict: false,
         }
     }
 }
 
-#[derive(Serialize)]
-pub struct StreamOptions {
-    pub include_usage: bool,
-}
-
+/// Request body for the Responses API (`POST /v1/responses`).
 #[derive(Serialize)]
 pub struct OpenAiRequest {
     pub model: String,
-    pub messages: Vec<OpenAiMessage>,
+    pub input: Vec<OpenAiInputItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_completion_tokens: Option<i32>,
+    pub instructions: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<OpenAiTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "stream_options")]
-    pub stream_options: Option<StreamOptions>,
+    pub store: bool,
 }
 
-// ---------------- Response types (non-streaming) ----------------
+// ---------------- Response types (Responses API, non-streaming) ----------------
 
 #[derive(Debug, Deserialize)]
 pub struct OpenAiUsage {
-    pub prompt_tokens: i32,
-    pub completion_tokens: i32,
+    pub input_tokens: i32,
+    pub output_tokens: i32,
     pub total_tokens: i32,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct OpenAiResponseFunctionCall {
-    pub name: Option<String>,
-    #[serde(default)]
-    pub arguments: Option<String>,
+#[serde(tag = "type")]
+pub enum OpenAiContentPart {
+    #[serde(rename = "output_text")]
+    OutputText {
+        #[allow(dead_code)]
+        text: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
-pub struct OpenAiResponseToolCall {
-    #[allow(dead_code)]
-    pub id: Option<String>,
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
-    pub kind: Option<String>,
-    pub function: OpenAiResponseFunctionCall,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct OpenAiResponseMessage {
-    #[serde(default)]
-    pub content: Option<String>,
-    #[serde(default, rename = "tool_calls")]
-    pub tool_calls: Option<Vec<OpenAiResponseToolCall>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct OpenAiChoice {
-    pub message: OpenAiResponseMessage,
-    #[allow(dead_code)]
-    #[serde(default)]
-    pub finish_reason: Option<String>,
-    #[allow(dead_code)]
-    #[serde(default)]
-    pub index: Option<i32>,
+#[serde(tag = "type")]
+pub enum OpenAiOutputItem {
+    #[serde(rename = "message")]
+    Message {
+        #[serde(default)]
+        #[allow(dead_code)]
+        content: Vec<OpenAiContentPart>,
+    },
+    #[serde(rename = "function_call")]
+    FunctionCall {
+        #[serde(default)]
+        #[allow(dead_code)]
+        call_id: Option<String>,
+        name: String,
+        arguments: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
 pub struct OpenAiResponse {
-    pub choices: Vec<OpenAiChoice>,
+    pub output: Vec<OpenAiOutputItem>,
+    #[serde(default)]
+    pub output_text: Option<String>,
     pub usage: Option<OpenAiUsage>,
 }
 
 impl OpenAiResponse {
     pub fn get_text(&self) -> String {
-        self.choices
-            .first()
-            .and_then(|c| c.message.content.clone())
-            .unwrap_or_default()
+        self.output_text.clone().unwrap_or_default()
     }
 
     pub fn get_function(&self) -> Option<(String, HashMap<String, Value>)> {
-        let choice = self.choices.first()?;
-        let tool_calls = choice.message.tool_calls.as_ref()?;
-        let first = tool_calls.first()?;
-        let name = first.function.name.clone()?;
-        let args_str = first.function.arguments.clone().unwrap_or_default();
-        let args: HashMap<String, Value> = if args_str.is_empty() {
-            HashMap::new()
-        } else {
-            serde_json::from_str(&args_str).unwrap_or_default()
-        };
-        Some((name, args))
+        for item in &self.output {
+            if let OpenAiOutputItem::FunctionCall { name, arguments, .. } = item {
+                let args: HashMap<String, Value> = if arguments.is_empty() {
+                    HashMap::new()
+                } else {
+                    serde_json::from_str(arguments).unwrap_or_default()
+                };
+                return Some((name.clone(), args));
+            }
+        }
+        None
     }
 }
 
-// ---------------- Streaming event types ----------------
+// ---------------- Streaming event types (Responses API) ----------------
 
+/// A single streamed item from `response.output_item.done`.
 #[derive(Debug, Deserialize)]
-pub struct StreamToolCallFunctionDelta {
+pub struct StreamOutputItem {
+    #[serde(rename = "type")]
+    pub item_type: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
     pub arguments: Option<String>,
 }
 
+/// Generic shape for all SSE data payloads from the Responses API.
+/// Different event types populate different fields.
 #[derive(Debug, Deserialize)]
-pub struct StreamToolCallDelta {
-    pub index: u32,
+pub struct ResponsesStreamEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    /// Text delta (for `response.output_text.delta`)
     #[serde(default)]
-    #[allow(dead_code)]
-    pub id: Option<String>,
+    pub delta: Option<String>,
+    /// Output item (for `response.output_item.done`)
     #[serde(default)]
-    pub function: Option<StreamToolCallFunctionDelta>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct StreamChoiceDelta {
+    pub item: Option<StreamOutputItem>,
+    /// Full response (for `response.completed`)
     #[serde(default)]
-    pub content: Option<String>,
-    #[serde(default, rename = "tool_calls")]
-    pub tool_calls: Option<Vec<StreamToolCallDelta>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct StreamChoice {
-    pub delta: StreamChoiceDelta,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub finish_reason: Option<String>,
-    #[allow(dead_code)]
-    #[serde(default)]
-    pub index: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct StreamChunk {
-    #[serde(default)]
-    pub choices: Vec<StreamChoice>,
-    #[serde(default)]
-    pub usage: Option<OpenAiUsage>,
+    pub response: Option<OpenAiResponse>,
 }
