@@ -248,6 +248,7 @@ macro_rules! openai_model_suite {
 openai_model_suite!(gpt_5_4, OpenAiModel::Gpt5_4);
 openai_model_suite!(gpt_5_4_mini, OpenAiModel::Gpt5_4Mini);
 openai_model_suite!(gpt_5_4_nano, OpenAiModel::Gpt5_4Nano);
+openai_model_suite!(gpt_5_5, OpenAiModel::Gpt5_5);
 
 #[test]
 fn test_openai_tool_passes_through_nullable_types() {

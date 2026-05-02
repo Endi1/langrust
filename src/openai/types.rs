@@ -8,7 +8,8 @@ use serde_json::Value;
 pub enum OpenAiModel {
     Gpt5_4,
     Gpt5_4Mini,
-    Gpt5_4Nano
+    Gpt5_4Nano,
+    Gpt5_5,
 }
 
 impl OpenAiModel {
@@ -16,7 +17,8 @@ impl OpenAiModel {
         match self {
             OpenAiModel::Gpt5_4 => "gpt-5.4".to_string(),
             OpenAiModel::Gpt5_4Mini => "gpt-5.4-mini".to_string(),
-            OpenAiModel::Gpt5_4Nano => "gpt-5.4-nano".to_string()
+            OpenAiModel::Gpt5_4Nano => "gpt-5.4-nano".to_string(),
+            OpenAiModel::Gpt5_5 => "gpt-5.5".to_string(),
         }
     }
 }
