@@ -10,6 +10,7 @@ pub enum OpenAiModel {
     Gpt5_4Mini,
     Gpt5_4Nano,
     Gpt5_5,
+    Gpt5_3Codex,
 }
 
 impl OpenAiModel {
@@ -19,6 +20,7 @@ impl OpenAiModel {
             OpenAiModel::Gpt5_4Mini => "gpt-5.4-mini".to_string(),
             OpenAiModel::Gpt5_4Nano => "gpt-5.4-nano".to_string(),
             OpenAiModel::Gpt5_5 => "gpt-5.5".to_string(),
+            OpenAiModel::Gpt5_3Codex => "gpt-5.3-codex".to_string(),
         }
     }
 }
@@ -40,10 +42,7 @@ pub fn synth_call_id(name: &str) -> String {
 #[serde(tag = "type")]
 pub enum OpenAiInputItem {
     #[serde(rename = "message")]
-    Message {
-        role: String,
-        content: String,
-    },
+    Message { role: String, content: String },
     #[serde(rename = "function_call")]
     FunctionCall {
         call_id: String,
@@ -51,10 +50,7 @@ pub enum OpenAiInputItem {
         arguments: String,
     },
     #[serde(rename = "function_call_output")]
-    FunctionCallOutput {
-        call_id: String,
-        output: String,
-    },
+    FunctionCallOutput { call_id: String, output: String },
 }
 
 /// Tool definition for the Responses API (internally tagged, flat structure).
@@ -173,7 +169,10 @@ impl OpenAiResponse {
 
     pub fn get_function(&self) -> Option<(String, HashMap<String, Value>)> {
         for item in &self.output {
-            if let OpenAiOutputItem::FunctionCall { name, arguments, .. } = item {
+            if let OpenAiOutputItem::FunctionCall {
+                name, arguments, ..
+            } = item
+            {
                 let args: HashMap<String, Value> = if arguments.is_empty() {
                     HashMap::new()
                 } else {

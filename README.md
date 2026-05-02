@@ -35,6 +35,8 @@ backend you target.
 - `Gpt5_4`        → `gpt-5.4`
 - `Gpt5_4Mini`    → `gpt-5.4-mini`
 - `Gpt5_4Nano`    → `gpt-5.4-nano`
+- `Gpt5_5`    → `gpt-5.5`
+- `Gpt5_3Codex`    → `gpt-5.3-codex`
 
 **Gemini** (`GeminiModel`) — used by both `GeminiApiModel` and `GeminiVertexModel`
 - `Gemini25Flash`      → `gemini-2.5-flash`
