@@ -342,3 +342,27 @@ fn test_claude_tool_emits_required_and_name_and_description() {
     let required = schema.get("required").unwrap().as_array().unwrap();
     assert!(required.iter().any(|v| v == "city"));
 }
+
+#[test]
+fn test_model_name_claude_api() {
+    let m = ClaudeApiModel {
+        client: reqwest::Client::new(),
+        api_key: "dummy-key".to_string(),
+        model: ClaudeModel::Sonnet4_5,
+    };
+    assert_eq!(m.model_name(), "claude-sonnet-4-5");
+
+    let m = ClaudeApiModel {
+        client: reqwest::Client::new(),
+        api_key: "dummy-key".to_string(),
+        model: ClaudeModel::Opus4_6,
+    };
+    assert_eq!(m.model_name(), "claude-opus-4-6");
+
+    let m = ClaudeApiModel {
+        client: reqwest::Client::new(),
+        api_key: "dummy-key".to_string(),
+        model: ClaudeModel::Opus4_7,
+    };
+    assert_eq!(m.model_name(), "claude-opus-4-7");
+}

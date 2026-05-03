@@ -343,3 +343,41 @@ fn test_openai_tool_emits_required_and_name_and_description() {
     let required = schema.get("required").unwrap().as_array().unwrap();
     assert!(required.iter().any(|v| v == "city"));
 }
+
+#[test]
+fn test_model_name_openai_api() {
+    let m = OpenAiApiModel {
+        client: reqwest::Client::new(),
+        api_key: "dummy-key".to_string(),
+        model: OpenAiModel::Gpt5_4,
+    };
+    assert_eq!(m.model_name(), "gpt-5.4");
+
+    let m = OpenAiApiModel {
+        client: reqwest::Client::new(),
+        api_key: "dummy-key".to_string(),
+        model: OpenAiModel::Gpt5_4Mini,
+    };
+    assert_eq!(m.model_name(), "gpt-5.4-mini");
+
+    let m = OpenAiApiModel {
+        client: reqwest::Client::new(),
+        api_key: "dummy-key".to_string(),
+        model: OpenAiModel::Gpt5_4Nano,
+    };
+    assert_eq!(m.model_name(), "gpt-5.4-nano");
+
+    let m = OpenAiApiModel {
+        client: reqwest::Client::new(),
+        api_key: "dummy-key".to_string(),
+        model: OpenAiModel::Gpt5_5,
+    };
+    assert_eq!(m.model_name(), "gpt-5.5");
+
+    let m = OpenAiApiModel {
+        client: reqwest::Client::new(),
+        api_key: "dummy-key".to_string(),
+        model: OpenAiModel::Gpt5_3Codex,
+    };
+    assert_eq!(m.model_name(), "gpt-5.3-codex");
+}

@@ -6,7 +6,8 @@ use reqwest::RequestBuilder;
 
 use crate::{
     client::{
-        Completion, FunctionCall, MessageType, ModelRequest, Role, StreamEvent, StreamResult, Usage,
+        Completion, FunctionCall, MessageType, Model, ModelRequest, Role, StreamEvent,
+        StreamResult, Usage,
     },
     gemini::types::{
         Content, FunctionCallPart, FunctionResponsePart, GeminiRequest, GeminiResponse, GeminiTool,
@@ -14,8 +15,7 @@ use crate::{
     },
 };
 
-pub trait GeminiClient {
-    fn model(&self) -> String;
+pub trait GeminiClient: Model {
     fn create_request_body(&self, request: ModelRequest) -> GeminiRequest {
         let thinking_config = request
             .settings
@@ -91,7 +91,7 @@ pub trait GeminiClient {
         &self,
         request: ModelRequest,
     ) -> Result<Completion, Box<dyn Error + Send + Sync>> {
-        let endpoint = self.get_endpoint(&self.model(), String::from("generateContent"));
+        let endpoint = self.get_endpoint(&self.model_name(), String::from("generateContent"));
         let request_body = self.create_request_body(request);
         let response = self
             .build_request(&endpoint, &request_body)
@@ -140,8 +140,10 @@ pub trait GeminiClient {
         &self,
         request: ModelRequest,
     ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
-        let endpoint =
-            self.get_endpoint(&self.model(), String::from("streamGenerateContent?alt=sse"));
+        let endpoint = self.get_endpoint(
+            &self.model_name(),
+            String::from("streamGenerateContent?alt=sse"),
+        );
         let request_body = self.create_request_body(request);
         let response = self
             .build_request(&endpoint, &request_body)

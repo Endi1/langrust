@@ -518,3 +518,35 @@ fn thinking_config_supports_dynamic_budget() {
         Some(-1)
     );
 }
+
+#[test]
+fn test_model_name_gemini_api() {
+    let m = make_direct_dummy(GeminiModel::Gemini25Flash);
+    assert_eq!(m.model_name(), "gemini-2.5-flash");
+
+    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
+    assert_eq!(m.model_name(), "gemini-3.1-pro-preview");
+
+    let m = make_direct_dummy(GeminiModel::Gemini3Flash);
+    assert_eq!(m.model_name(), "gemini-3-flash-preview");
+
+    let m = make_direct_dummy(GeminiModel::Gemini31FlashLite);
+    assert_eq!(m.model_name(), "gemini-3.1-flash-lite-preview");
+}
+
+#[test]
+fn test_model_name_gemini_vertex() {
+    let m = GeminiVertexModel {
+        client: reqwest::Client::new(),
+        project_name: "dummy-project".to_string(),
+        model: GeminiModel::Gemini25Flash,
+    };
+    assert_eq!(m.model_name(), "gemini-2.5-flash");
+
+    let m = GeminiVertexModel {
+        client: reqwest::Client::new(),
+        project_name: "dummy-project".to_string(),
+        model: GeminiModel::Gemini31Pro,
+    };
+    assert_eq!(m.model_name(), "gemini-3.1-pro-preview");
+}

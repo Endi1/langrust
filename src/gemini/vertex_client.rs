@@ -33,13 +33,13 @@ impl Model for GeminiVertexModel {
     ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
         self.stream_generate_content(request).await
     }
+
+    fn model_name(&self) -> String {
+        self.model.to_string()
+    }
 }
 
 impl GeminiClient for GeminiVertexModel {
-    fn model(&self) -> String {
-        self.model.to_string()
-    }
-
     fn get_endpoint(&self, model: &String, method: String) -> String {
         return format!(
             "https://aiplatform.googleapis.com/v1/projects/{}/locations/global/publishers/google/models/{model}:{method}",
