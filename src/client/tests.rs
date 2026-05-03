@@ -35,6 +35,10 @@ impl Model for MockModel {
             }),
         ])))
     }
+
+    fn model_name(&self) -> String {
+        "test-model".to_string()
+    }
 }
 
 #[test]
@@ -261,4 +265,11 @@ fn test_message_function_result() {
     let msg = Message::function_result("search".to_string(), vec!["result1", "result2"]);
     assert_eq!(msg.role, Some(Role::User));
     assert!(msg.content.contains("search"));
+}
+
+#[test]
+fn test_model_name() {
+    let model = MockModel;
+    let model_name = model.model_name();
+    assert_eq!(model_name, "test-model".to_string());
 }

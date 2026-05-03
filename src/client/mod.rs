@@ -130,6 +130,8 @@ pub trait Model {
     {
         ModelRequestBuilder::new(self as &dyn Model)
     }
+
+    fn model_name(&self) -> String;
 }
 
 #[derive(Clone)]

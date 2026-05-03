@@ -6,19 +6,18 @@ use futures::{StreamExt, TryFutureExt, stream};
 use reqwest::RequestBuilder;
 
 use crate::{
-    client::{
-        Completion, FunctionCall, MessageType, ModelRequest, StreamEvent, StreamResult, Usage,
-    },
     claude::types::{
         BlockDelta, ClaudeMessage, ClaudeRequest, ClaudeResponse, ClaudeTool, ContentBlock,
         DEFAULT_MAX_TOKENS, ResponseBlock, StreamContentBlock, StreamingEvent, ThinkingConfig,
         synth_tool_use_id,
     },
+    client::{
+        Completion, FunctionCall, MessageType, Model, ModelRequest, StreamEvent, StreamResult,
+        Usage,
+    },
 };
 
-pub trait ClaudeClient {
-    fn model(&self) -> String;
-
+pub trait ClaudeClient: Model {
     fn create_request_body(&self, request: ModelRequest, stream: bool) -> ClaudeRequest {
         let settings = request.settings.clone();
 
@@ -85,7 +84,7 @@ pub trait ClaudeClient {
             .map(|ts| ts.iter().map(ClaudeTool::from_tool).collect());
 
         ClaudeRequest {
-            model: self.model(),
+            model: self.model_name(),
             max_tokens,
             system: request.system.clone(),
             messages,
@@ -107,9 +106,7 @@ pub trait ClaudeClient {
         let status = response.status();
         if !status.is_success() {
             let err = response.text().map_err(|e| e.to_string()).await?;
-            return Err(
-                format!("Claude request failed with status {}: {}", status, err).into(),
-            );
+            return Err(format!("Claude request failed with status {}: {}", status, err).into());
         }
 
         let body: ClaudeResponse = response.json().await?;
@@ -174,20 +171,15 @@ pub trait ClaudeClient {
                 let next = state.sse.next().await?;
                 match next {
                     Err(e) => {
-                        state
-                            .buffer
-                            .push_back(StreamEvent::Error(e.to_string()));
+                        state.buffer.push_back(StreamEvent::Error(e.to_string()));
                     }
                     Ok(event) => {
                         if event.data.is_empty() || event.data == "[DONE]" {
                             continue;
                         }
-                        let parsed: Result<StreamingEvent, _> =
-                            serde_json::from_str(&event.data);
+                        let parsed: Result<StreamingEvent, _> = serde_json::from_str(&event.data);
                         match parsed {
-                            Err(e) => state
-                                .buffer
-                                .push_back(StreamEvent::Error(e.to_string())),
+                            Err(e) => state.buffer.push_back(StreamEvent::Error(e.to_string())),
                             Ok(ev) => handle_event(ev, &mut state),
                         }
                     }

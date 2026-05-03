@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use reqwest::RequestBuilder;
 
 use crate::{
-    client::{Completion, Model, ModelRequest, StreamResult},
     claude::{
         base::ClaudeClient,
         types::{ClaudeModel, ClaudeRequest},
     },
+    client::{Completion, Model, ModelRequest, StreamResult},
 };
 
 pub struct ClaudeApiModel {
@@ -32,13 +32,13 @@ impl Model for ClaudeApiModel {
     ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
         self.stream_generate_content(request).await
     }
+
+    fn model_name(&self) -> String {
+        self.model.to_string()
+    }
 }
 
 impl ClaudeClient for ClaudeApiModel {
-    fn model(&self) -> String {
-        self.model.to_string()
-    }
-
     fn get_endpoint(&self) -> String {
         "https://api.anthropic.com/v1/messages".to_string()
     }

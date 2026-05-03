@@ -32,13 +32,13 @@ impl Model for OpenAiApiModel {
     ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
         self.stream_generate_content(request).await
     }
+
+    fn model_name(&self) -> String {
+        self.model.to_string()
+    }
 }
 
 impl OpenAiClient for OpenAiApiModel {
-    fn model(&self) -> String {
-        self.model.to_string()
-    }
-
     fn get_endpoint(&self) -> String {
         "https://api.openai.com/v1/responses".to_string()
     }

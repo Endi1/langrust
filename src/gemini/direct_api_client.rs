@@ -32,12 +32,13 @@ impl Model for GeminiApiModel {
     ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
         self.stream_generate_content(request).await
     }
+
+    fn model_name(&self) -> String {
+        self.model.to_string()
+    }
 }
 
 impl GeminiClient for GeminiApiModel {
-    fn model(&self) -> String {
-        self.model.to_string()
-    }
     fn get_endpoint(&self, model: &String, method: String) -> String {
         return format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:{}",

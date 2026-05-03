@@ -7,7 +7,8 @@ use reqwest::RequestBuilder;
 
 use crate::{
     client::{
-        Completion, FunctionCall, MessageType, ModelRequest, StreamEvent, StreamResult, Usage,
+        Completion, FunctionCall, MessageType, Model, ModelRequest, StreamEvent, StreamResult,
+        Usage,
     },
     openai::types::{
         OpenAiInputItem, OpenAiRequest, OpenAiResponse, OpenAiTool, ResponsesStreamEvent,
@@ -15,9 +16,7 @@ use crate::{
     },
 };
 
-pub trait OpenAiClient {
-    fn model(&self) -> String;
-
+pub trait OpenAiClient: Model {
     fn create_request_body(&self, request: ModelRequest, stream: bool) -> OpenAiRequest {
         let settings = request.settings.clone();
 
@@ -51,8 +50,7 @@ pub trait OpenAiClient {
                     }
                 },
                 MessageType::FunctionCall(fc) => {
-                    let arguments =
-                        serde_json::to_string(&fc.args).unwrap_or("{}".to_string());
+                    let arguments = serde_json::to_string(&fc.args).unwrap_or("{}".to_string());
                     input.push(OpenAiInputItem::FunctionCall {
                         call_id: synth_call_id(&fc.name),
                         name: fc.name.clone(),
@@ -79,7 +77,7 @@ pub trait OpenAiClient {
         let stream_flag = if stream { Some(true) } else { None };
 
         OpenAiRequest {
-            model: self.model(),
+            model: self.model_name(),
             input,
             instructions: request.system.clone(),
             max_output_tokens,
@@ -101,18 +99,15 @@ pub trait OpenAiClient {
         let status = response.status();
         if !status.is_success() {
             let err = response.text().map_err(|e| e.to_string()).await?;
-            return Err(
-                format!("OpenAI request failed with status {}: {}", status, err).into(),
-            );
+            return Err(format!("OpenAI request failed with status {}: {}", status, err).into());
         }
 
         let body: OpenAiResponse = response.json().await?;
 
         let text = body.get_text();
-        let function = body.get_function().map(|(name, args)| FunctionCall {
-            name,
-            args,
-        });
+        let function = body
+            .get_function()
+            .map(|(name, args)| FunctionCall { name, args });
 
         let usage = body.usage.map(|u| Usage {
             prompt_tokens: u.input_tokens,
@@ -164,9 +159,7 @@ pub trait OpenAiClient {
                 let next = state.sse.next().await?;
                 match next {
                     Err(e) => {
-                        state
-                            .buffer
-                            .push_back(StreamEvent::Error(e.to_string()));
+                        state.buffer.push_back(StreamEvent::Error(e.to_string()));
                     }
                     Ok(event) => {
                         if event.data.is_empty() {
@@ -175,9 +168,7 @@ pub trait OpenAiClient {
                         let parsed: Result<ResponsesStreamEvent, _> =
                             serde_json::from_str(&event.data);
                         match parsed {
-                            Err(e) => state
-                                .buffer
-                                .push_back(StreamEvent::Error(e.to_string())),
+                            Err(e) => state.buffer.push_back(StreamEvent::Error(e.to_string())),
                             Ok(ev) => handle_stream_event(ev, &mut state),
                         }
                     }
@@ -225,10 +216,7 @@ fn handle_stream_event(event: ResponsesStreamEvent, state: &mut State) {
                                 }
                             }
                         };
-                        state.push_event(StreamEvent::FunctionCall(FunctionCall {
-                            name,
-                            args,
-                        }));
+                        state.push_event(StreamEvent::FunctionCall(FunctionCall { name, args }));
                     }
                 }
             }
