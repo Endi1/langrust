@@ -5,34 +5,33 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    client::{Message, Model, Settings, StreamEvent, Tool, Usage},
-    gemini::{
-        base::GeminiClient,
-        direct_api_client::GeminiApiModel,
+    request::Model,
+    types::{Message, Settings, StreamEvent, Tool, Usage},
+    providers::gemini::{
+        GeminiApiModel, GeminiVertexModel,
+        adapter::GeminiAdapter,
         types::{GeminiModel, GeminiTool},
-        vertex_client::GeminiVertexModel,
     },
+    provider::ProviderAdapter,
 };
 
 fn make_direct(model: GeminiModel) -> GeminiApiModel {
-    GeminiApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("GEMINI_KEY").expect("GEMINI_KEY env var must be set"),
+    GeminiApiModel::new(
+        env::var("GEMINI_KEY").expect("GEMINI_KEY env var must be set"),
         model,
-    }
+    )
 }
 
 fn make_vertex(model: GeminiModel) -> GeminiVertexModel {
-    GeminiVertexModel {
-        project_name: env::var("VERTEX_PROJECT").expect("VERTEX_PROJECT env var must be set"),
-        client: reqwest::Client::new(),
+    GeminiVertexModel::new(
+        env::var("VERTEX_PROJECT").expect("VERTEX_PROJECT env var must be set"),
         model,
-    }
+    )
 }
 
 fn default_settings() -> Settings {
     Settings {
-        max_tokens: Some(8000),
+        max_tokens: Some(8000.0),
         timeout: None,
         temperature: None,
         // Use dynamic thinking (-1) so thinking-only models like Gemini 3.1 Pro
@@ -355,7 +354,7 @@ fn response_deserializes_when_content_has_no_parts() {
     // Some Gemini 3.x responses (e.g. thinking-only turns, MAX_TOKENS, safety
     // stops) return a candidate whose `content` has no `parts` field at all.
     // We must not fail to decode in that case.
-    use crate::gemini::types::GeminiResponse;
+    use crate::providers::gemini::types::GeminiResponse;
 
     let raw = r#"{
         "candidates": [
@@ -385,7 +384,7 @@ fn response_with_partial_usage_metadata_reports_missing_counts_as_none() {
     // `promptTokenCount` in `usageMetadata`. Make sure the getters return
     // `None` for the missing counts (callers default them to 0) and the
     // response still decodes.
-    use crate::gemini::types::GeminiResponse;
+    use crate::providers::gemini::types::GeminiResponse;
 
     let raw = r#"{
         "candidates": [
@@ -416,7 +415,7 @@ fn response_with_partial_usage_metadata_reports_missing_counts_as_none() {
 
 #[test]
 fn response_deserializes_when_candidate_has_no_content() {
-    use crate::gemini::types::GeminiResponse;
+    use crate::providers::gemini::types::GeminiResponse;
 
     let raw = r#"{
         "candidates": [
@@ -431,19 +430,19 @@ fn response_deserializes_when_candidate_has_no_content() {
 }
 
 fn make_direct_dummy(model: GeminiModel) -> GeminiApiModel {
-    GeminiApiModel {
-        client: reqwest::Client::new(),
-        api_key: "dummy".to_string(),
-        model,
-    }
+    GeminiApiModel::new("dummy", model)
 }
 
-fn request_with_thinking(thinking_budget: Option<i16>) -> crate::client::ModelRequest {
-    crate::client::ModelRequest {
+fn build_body(request: crate::request::ModelRequest) -> super::types::GeminiRequest {
+    GeminiAdapter.build_body(&request, "gemini-test", false)
+}
+
+fn request_with_thinking(thinking_budget: Option<i16>) -> crate::request::ModelRequest {
+    crate::request::ModelRequest {
         system: None,
         messages: Some(vec![Message::user("hi".to_string())]),
         settings: Some(Settings {
-            max_tokens: Some(100),
+            max_tokens: Some(100.0),
             timeout: None,
             temperature: None,
             thinking_budget,
@@ -454,8 +453,7 @@ fn request_with_thinking(thinking_budget: Option<i16>) -> crate::client::ModelRe
 
 #[test]
 fn thinking_config_omitted_when_budget_is_none() {
-    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
-    let body = m.create_request_body(request_with_thinking(None));
+    let body = build_body(request_with_thinking(None));
     assert!(
         body.generation_config.thinking_config.is_none(),
         "thinking_config should be omitted when thinking_budget is None"
@@ -473,21 +471,19 @@ fn thinking_config_omitted_when_budget_is_none() {
 
 #[test]
 fn thinking_config_omitted_when_settings_is_none() {
-    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
-    let req = crate::client::ModelRequest {
+    let req = crate::request::ModelRequest {
         system: None,
         messages: Some(vec![Message::user("hi".to_string())]),
         settings: None,
         tools: None,
     };
-    let body = m.create_request_body(req);
+    let body = build_body(req);
     assert!(body.generation_config.thinking_config.is_none());
 }
 
 #[test]
 fn thinking_config_set_when_budget_is_some() {
-    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
-    let body = m.create_request_body(request_with_thinking(Some(1024)));
+    let body = build_body(request_with_thinking(Some(1024)));
     let tc = body
         .generation_config
         .thinking_config
@@ -508,8 +504,7 @@ fn thinking_config_set_when_budget_is_some() {
 #[test]
 fn thinking_config_supports_dynamic_budget() {
     // Gemini uses -1 to signal "dynamic thinking". Make sure we pass it through.
-    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
-    let body = m.create_request_body(request_with_thinking(Some(-1)));
+    let body = build_body(request_with_thinking(Some(-1)));
     assert_eq!(
         body.generation_config
             .thinking_config
@@ -536,17 +531,9 @@ fn test_model_name_gemini_api() {
 
 #[test]
 fn test_model_name_gemini_vertex() {
-    let m = GeminiVertexModel {
-        client: reqwest::Client::new(),
-        project_name: "dummy-project".to_string(),
-        model: GeminiModel::Gemini25Flash,
-    };
+    let m = GeminiVertexModel::new("dummy-project", GeminiModel::Gemini25Flash);
     assert_eq!(m.model_name(), "gemini-2.5-flash");
 
-    let m = GeminiVertexModel {
-        client: reqwest::Client::new(),
-        project_name: "dummy-project".to_string(),
-        model: GeminiModel::Gemini31Pro,
-    };
+    let m = GeminiVertexModel::new("dummy-project", GeminiModel::Gemini31Pro);
     assert_eq!(m.model_name(), "gemini-3.1-pro-preview");
 }

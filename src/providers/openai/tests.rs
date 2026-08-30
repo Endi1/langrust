@@ -5,24 +5,24 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    client::{Message, Model, Settings, StreamEvent, Tool, Usage},
-    openai::{
-        direct_api_client::OpenAiApiModel,
+    request::Model,
+    types::{Message, Settings, StreamEvent, Tool, Usage},
+    providers::openai::{
+        OpenAiApiModel,
         types::{OpenAiModel, OpenAiTool},
     },
 };
 
 fn make_model(model: OpenAiModel) -> OpenAiApiModel {
-    OpenAiApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("OPENAI_KEY").expect("OPENAI_KEY env var must be set"),
+    OpenAiApiModel::new(
+        env::var("OPENAI_KEY").expect("OPENAI_KEY env var must be set"),
         model,
-    }
+    )
 }
 
 fn default_settings() -> Settings {
     Settings {
-        max_tokens: Some(8000),
+        max_tokens: Some(8000.0),
         timeout: None,
         temperature: None,
         thinking_budget: None,
@@ -346,38 +346,18 @@ fn test_openai_tool_emits_required_and_name_and_description() {
 
 #[test]
 fn test_model_name_openai_api() {
-    let m = OpenAiApiModel {
-        client: reqwest::Client::new(),
-        api_key: "dummy-key".to_string(),
-        model: OpenAiModel::Gpt5_4,
-    };
+    let m = OpenAiApiModel::new("dummy-key", OpenAiModel::Gpt5_4);
     assert_eq!(m.model_name(), "gpt-5.4");
 
-    let m = OpenAiApiModel {
-        client: reqwest::Client::new(),
-        api_key: "dummy-key".to_string(),
-        model: OpenAiModel::Gpt5_4Mini,
-    };
+    let m = OpenAiApiModel::new("dummy-key", OpenAiModel::Gpt5_4Mini);
     assert_eq!(m.model_name(), "gpt-5.4-mini");
 
-    let m = OpenAiApiModel {
-        client: reqwest::Client::new(),
-        api_key: "dummy-key".to_string(),
-        model: OpenAiModel::Gpt5_4Nano,
-    };
+    let m = OpenAiApiModel::new("dummy-key", OpenAiModel::Gpt5_4Nano);
     assert_eq!(m.model_name(), "gpt-5.4-nano");
 
-    let m = OpenAiApiModel {
-        client: reqwest::Client::new(),
-        api_key: "dummy-key".to_string(),
-        model: OpenAiModel::Gpt5_5,
-    };
+    let m = OpenAiApiModel::new("dummy-key", OpenAiModel::Gpt5_5);
     assert_eq!(m.model_name(), "gpt-5.5");
 
-    let m = OpenAiApiModel {
-        client: reqwest::Client::new(),
-        api_key: "dummy-key".to_string(),
-        model: OpenAiModel::Gpt5_3Codex,
-    };
+    let m = OpenAiApiModel::new("dummy-key", OpenAiModel::Gpt5_3Codex);
     assert_eq!(m.model_name(), "gpt-5.3-codex");
 }
