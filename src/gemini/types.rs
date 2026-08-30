@@ -32,8 +32,9 @@ pub struct ThinkingConfig {
 #[derive(Serialize)]
 pub struct GenerationConfig {
     #[serde(rename = "maxOutputTokens", skip_serializing_if = "Option::is_none")]
-    pub max_output_tokens: Option<i16>,
-    pub temperature: i16,
+    pub max_output_tokens: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
     #[serde(rename = "thinkingConfig", skip_serializing_if = "Option::is_none")]
     pub thinking_config: Option<ThinkingConfig>,
 }

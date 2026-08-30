@@ -47,8 +47,9 @@ pub enum Role {
     User,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MessageType {
+    #[default]
     Text,
     FunctionCall(FunctionCall),
     FunctionResponse {
@@ -57,17 +58,11 @@ pub enum MessageType {
     },
 }
 
-impl Default for MessageType {
-    fn default() -> Self {
-        MessageType::Text
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {
     pub content: String,
     pub role: Option<Role>,
-    #[serde(skip)]
+    #[serde(default)]
     pub message_type: MessageType,
 }
 
@@ -113,7 +108,7 @@ impl Message {
 }
 
 #[async_trait]
-pub trait Model {
+pub trait Model: Send + Sync {
     async fn completion(
         &self,
         request: ModelRequest,
@@ -136,9 +131,9 @@ pub trait Model {
 
 #[derive(Clone)]
 pub struct Settings {
-    pub max_tokens: Option<i16>,
+    pub max_tokens: Option<f32>,
     pub timeout: Option<i16>,
-    pub temperature: Option<i16>,
+    pub temperature: Option<f32>,
     pub thinking_budget: Option<i16>,
 }
 
@@ -180,14 +175,11 @@ impl Tool {
         let arg_schema = schema_for!(T);
         let json_value = serde_json::to_value(&arg_schema)?;
         let parameters: ToolParameters = serde_json::from_value(json_value)?;
-        match self.parameters {
-            None => Ok(Tool {
-                name: self.name,
-                description: self.description,
-                parameters: Some(parameters),
-            }),
-            Some(_) => Ok(self),
-        }
+        Ok(Tool {
+            name: self.name,
+            description: self.description,
+            parameters: Some(parameters),
+        })
     }
 }
 
@@ -199,9 +191,6 @@ pub struct ModelRequestBuilder<'a> {
     pub settings: Option<Settings>,
     pub tools: Option<Vec<Tool>>,
 }
-
-unsafe impl<'a> Sync for ModelRequestBuilder<'a> {}
-unsafe impl<'a> Send for ModelRequestBuilder<'a> {}
 
 pub struct ModelRequest {
     pub system: Option<String>,
@@ -251,7 +240,7 @@ impl<'a> ModelRequestBuilder<'a> {
         match self.tools {
             None => self.tools = Some(vec![tool]),
             Some(_) => {
-                self.tools.clone().map(|mut ts| ts.push(tool));
+                self.tools.get_or_insert_with(Vec::new).push(tool);
             }
         }
         return self;
@@ -261,7 +250,7 @@ impl<'a> ModelRequestBuilder<'a> {
         match self.tools {
             None => self.tools = Some(tools),
             Some(_) => {
-                self.tools.clone().map(|mut ts| ts.extend(tools));
+                self.tools.get_or_insert_with(Vec::new).extend(tools);
             }
         }
         return self;

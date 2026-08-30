@@ -22,7 +22,7 @@ fn make_model(model: ClaudeModel) -> ClaudeApiModel {
 
 fn default_settings() -> Settings {
     Settings {
-        max_tokens: Some(8000),
+        max_tokens: Some(8000.0),
         timeout: None,
         temperature: None,
         thinking_budget: None,

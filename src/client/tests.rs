@@ -123,17 +123,17 @@ fn test_with_settings() {
     let model = MockModel;
     let mut builder = ModelRequestBuilder::new(&model);
     let settings = Settings {
-        max_tokens: Some(100),
+        max_tokens: Some(100.0),
         timeout: Some(30),
-        temperature: Some(7),
+        temperature: Some(0.7),
         thinking_budget: None,
     };
     builder.with_settings(settings);
 
     let s = builder.settings.unwrap();
-    assert_eq!(s.max_tokens, Some(100));
+    assert_eq!(s.max_tokens, Some(100.0));
     assert_eq!(s.timeout, Some(30));
-    assert_eq!(s.temperature, Some(7));
+    assert_eq!(s.temperature, Some(0.7));
 }
 
 #[test]
@@ -186,7 +186,7 @@ fn test_chaining() {
         .with_message(Message::user("User msg".to_string()))
         .with_tool(Tool::new("tool", "desc"))
         .with_settings(Settings {
-            max_tokens: Some(50),
+            max_tokens: Some(50.0),
             timeout: None,
             temperature: None,
             thinking_budget: None,
@@ -272,4 +272,24 @@ fn test_model_name() {
     let model = MockModel;
     let model_name = model.model_name();
     assert_eq!(model_name, "test-model".to_string());
+}
+
+#[test]
+fn test_message_serde_roundtrip_preserves_message_type() {
+    let fc = FunctionCall {
+        name: "get_weather".to_string(),
+        args: HashMap::from([("city".to_string(), serde_json::json!("Berlin"))]),
+    };
+    let original = Message::function_call(fc);
+
+    let json = serde_json::to_string(&original).unwrap();
+    let back: Message = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(back, original);
+    assert!(matches!(back.message_type, MessageType::FunctionCall(_)));
+
+    // Messages serialized before `message_type` existed still deserialize (as Text).
+    let legacy = r#"{"content":"hi","role":"user"}"#;
+    let msg: Message = serde_json::from_str(legacy).unwrap();
+    assert_eq!(msg.message_type, MessageType::Text);
 }

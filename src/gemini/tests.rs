@@ -32,7 +32,7 @@ fn make_vertex(model: GeminiModel) -> GeminiVertexModel {
 
 fn default_settings() -> Settings {
     Settings {
-        max_tokens: Some(8000),
+        max_tokens: Some(8000.0),
         timeout: None,
         temperature: None,
         // Use dynamic thinking (-1) so thinking-only models like Gemini 3.1 Pro
@@ -443,7 +443,7 @@ fn request_with_thinking(thinking_budget: Option<i16>) -> crate::client::ModelRe
         system: None,
         messages: Some(vec![Message::user("hi".to_string())]),
         settings: Some(Settings {
-            max_tokens: Some(100),
+            max_tokens: Some(100.0),
             timeout: None,
             temperature: None,
             thinking_budget,

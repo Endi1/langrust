@@ -25,11 +25,7 @@ pub trait GeminiClient: Model {
 
         let generation_config = GenerationConfig {
             max_output_tokens: request.settings.clone().and_then(|s| s.max_tokens),
-            temperature: request
-                .settings
-                .clone()
-                .map(|s| s.temperature.unwrap_or_default())
-                .unwrap_or_default(),
+            temperature: request.settings.clone().and_then(|s| s.temperature),
             thinking_config,
         };
 
