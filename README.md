@@ -285,6 +285,21 @@ To use a custom `reqwest::Client`, call the `with_client` constructors; to add
 a new backend, implement `Transport` (new auth/endpoint for an existing wire
 format) or `ProviderAdapter` + `Transport` (entirely new provider).
 
+Module layout:
+
+```
+src/
+  error.rs        // LlmError
+  types.rs        // Message, Role, Tool, Settings, Usage, Completion, StreamEvent
+  request.rs      // Model trait, ModelRequest + builder
+  http.rs         // shared status-check + SSE-to-StreamEvent plumbing
+  provider.rs     // ProviderAdapter, Transport, LlmClient
+  providers/
+    claude/       // wire types + adapter + transport
+    openai/
+    gemini/       // + Vertex transport, gcloud helpers
+```
+
 ## Core types cheat-sheet
 
 - `Model` — trait with `completion()` and `stream_completion()`; all providers implement it.
@@ -296,6 +311,8 @@ format) or `ProviderAdapter` + `Transport` (entirely new provider).
 - `Settings { max_tokens, timeout, temperature, thinking_budget }` — all `Option`.
 - `Completion { completion, usage, function }` — unified non-streaming response.
 - `StreamEvent` — `Delta | Usage | FunctionCall | Error` for streaming.
+- `LlmError` — typed error for all providers: `Http { provider, status, body } |
+  Parse | Transport | Auth | Other`. Converts into `Box<dyn Error>` via `?`.
 
 ## Known limitations
 

@@ -9,18 +9,13 @@
 //! Concrete client types like `ClaudeApiModel` are type aliases of
 //! [`LlmClient`] with the right adapter/transport pair.
 
-use std::collections::VecDeque;
-use std::error::Error;
-use std::pin::Pin;
-
 use async_trait::async_trait;
-use eventsource_stream::Eventsource;
-use futures::{StreamExt, stream};
 use serde::Serialize;
 
-use crate::client::{Completion, Model, ModelRequest, StreamEvent, StreamResult};
-
-pub type BoxError = Box<dyn Error + Send + Sync>;
+use crate::error::LlmError;
+use crate::http::{require_success, sse_events};
+use crate::request::{Model, ModelRequest};
+use crate::types::{Completion, StreamEvent, StreamResult};
 
 /// Which provider action a request is for. Transports use this to select the
 /// endpoint when the URL differs between plain and streaming completions
@@ -47,7 +42,7 @@ pub trait ProviderAdapter: Default + Send + Sync + 'static {
     fn build_body(&self, request: &ModelRequest, model: &str, stream: bool) -> Self::Request;
 
     /// Parse a successful non-streaming response body.
-    fn parse_completion(&self, body: &[u8]) -> Result<Completion, BoxError>;
+    fn parse_completion(&self, body: &[u8]) -> Result<Completion, LlmError>;
 
     /// Map one SSE `data:` payload to zero or more common stream events.
     fn map_sse_event(&self, data: &str, state: &mut Self::StreamState) -> Vec<StreamEvent>;
@@ -63,7 +58,7 @@ pub trait Transport: Send + Sync {
         model: &str,
         action: Action,
         body: serde_json::Value,
-    ) -> Result<reqwest::Response, BoxError>;
+    ) -> Result<reqwest::Response, LlmError>;
 }
 
 /// Generic LLM client: a [`ProviderAdapter`] (wire format) plus a
@@ -87,84 +82,28 @@ impl<A: ProviderAdapter, T: Transport> LlmClient<A, T> {
 
 #[async_trait]
 impl<A: ProviderAdapter, T: Transport> Model for LlmClient<A, T> {
-    async fn completion(&self, request: ModelRequest) -> Result<Completion, BoxError> {
+    async fn completion(&self, request: ModelRequest) -> Result<Completion, LlmError> {
         let body = serde_json::to_value(self.adapter.build_body(&request, &self.model, false))?;
         let response = self.transport.send(&self.model, Action::Generate, body).await?;
-        let response = check_status(A::NAME, response).await?;
+        let response = require_success(A::NAME, response).await?;
         let bytes = response.bytes().await?;
         self.adapter.parse_completion(&bytes)
     }
 
-    async fn stream_completion(&self, request: ModelRequest) -> Result<StreamResult, BoxError> {
+    async fn stream_completion(&self, request: ModelRequest) -> Result<StreamResult, LlmError> {
         let body = serde_json::to_value(self.adapter.build_body(&request, &self.model, true))?;
         let response = self.transport.send(&self.model, Action::Stream, body).await?;
-        let response = check_status(A::NAME, response).await?;
-        Ok(sse_stream(A::default(), response))
+        let response = require_success(A::NAME, response).await?;
+
+        let adapter = A::default();
+        Ok(sse_events(
+            response,
+            A::StreamState::default(),
+            move |data, state| adapter.map_sse_event(data, state),
+        ))
     }
 
     fn model_name(&self) -> String {
         self.model.clone()
     }
-}
-
-/// Pass through successful responses; turn error statuses into a readable error.
-async fn check_status(
-    provider: &str,
-    response: reqwest::Response,
-) -> Result<reqwest::Response, BoxError> {
-    let status = response.status();
-    if status.is_success() {
-        return Ok(response);
-    }
-    let body = response.text().await.unwrap_or_default();
-    Err(format!("{} request failed with status {}: {}", provider, status, body).into())
-}
-
-type SseEvents = Pin<
-    Box<
-        dyn futures::Stream<
-                Item = Result<
-                    eventsource_stream::Event,
-                    eventsource_stream::EventStreamError<reqwest::Error>,
-                >,
-            > + Send,
-    >,
->;
-
-/// Turn an SSE response into a `StreamResult` by feeding each `data:` payload
-/// through the adapter's [`ProviderAdapter::map_sse_event`].
-fn sse_stream<A: ProviderAdapter>(adapter: A, response: reqwest::Response) -> StreamResult {
-    struct State<A: ProviderAdapter> {
-        adapter: A,
-        provider_state: A::StreamState,
-        buffer: VecDeque<StreamEvent>,
-        sse: SseEvents,
-    }
-
-    let state = State {
-        adapter,
-        provider_state: A::StreamState::default(),
-        buffer: VecDeque::new(),
-        sse: Box::pin(response.bytes_stream().eventsource()),
-    };
-
-    let out = stream::unfold(state, |mut st| async move {
-        loop {
-            if let Some(ev) = st.buffer.pop_front() {
-                return Some((ev, st));
-            }
-            match st.sse.next().await? {
-                Err(e) => st.buffer.push_back(StreamEvent::Error(e.to_string())),
-                Ok(event) => {
-                    if event.data.is_empty() {
-                        continue;
-                    }
-                    let events = st.adapter.map_sse_event(&event.data, &mut st.provider_state);
-                    st.buffer.extend(events);
-                }
-            }
-        }
-    });
-
-    Box::pin(out)
 }

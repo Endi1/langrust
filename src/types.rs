@@ -1,13 +1,12 @@
-use schemars::{JsonSchema, schema_for};
-use serde_json::{self, Value};
-use std::{collections::HashMap, error::Error, pin::Pin};
+//! Provider-agnostic data types: messages, tools, settings, usage and
+//! completion/stream results.
 
-use async_trait::async_trait;
+use std::{collections::HashMap, pin::Pin};
+
 use futures::Stream;
+use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
-
-#[cfg(test)]
-mod tests;
+use serde_json::{self, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionCall {
@@ -69,7 +68,7 @@ pub struct Message {
 impl Message {
     pub fn user(content: String) -> Message {
         Message {
-            content: content,
+            content,
             role: Some(Role::User),
             message_type: MessageType::Text,
         }
@@ -77,7 +76,7 @@ impl Message {
 
     pub fn model(content: String) -> Message {
         Message {
-            content: content,
+            content,
             role: Some(Role::Model),
             message_type: MessageType::Text,
         }
@@ -107,28 +106,6 @@ impl Message {
     }
 }
 
-#[async_trait]
-pub trait Model: Send + Sync {
-    async fn completion(
-        &self,
-        request: ModelRequest,
-    ) -> Result<Completion, Box<dyn Error + Send + Sync>>;
-
-    async fn stream_completion(
-        &self,
-        request: ModelRequest,
-    ) -> Result<StreamResult, Box<dyn Error + Send + Sync>>;
-
-    fn new_request(&self) -> ModelRequestBuilder<'_>
-    where
-        Self: Sized,
-    {
-        ModelRequestBuilder::new(self as &dyn Model)
-    }
-
-    fn model_name(&self) -> String;
-}
-
 #[derive(Clone)]
 pub struct Settings {
     pub max_tokens: Option<f32>,
@@ -141,18 +118,31 @@ pub struct Settings {
 pub struct ToolParameters {
     #[serde(rename = "type")]
     pub _type: String,
-    #[serde(default = "default_properties")]
+    #[serde(default)]
     pub properties: HashMap<String, Value>, // TODO Eventually improve the typing here
-    #[serde(default = "default_required")]
+    #[serde(default)]
     pub required: Vec<String>,
 }
 
-fn default_properties() -> HashMap<String, Value> {
-    HashMap::new()
-}
+impl ToolParameters {
+    /// Standard JSON Schema object form:
+    /// `{ "type": ..., "properties": ..., "required": ... }`.
+    ///
+    /// Used verbatim by providers that accept plain JSON Schema (Anthropic,
+    /// OpenAI). Gemini applies its own conversion on top (uppercase type
+    /// names, `nullable`).
+    pub fn to_json_schema(&self) -> Value {
+        serde_json::json!({
+            "type": self._type,
+            "properties": self.properties,
+            "required": self.required,
+        })
+    }
 
-fn default_required() -> Vec<String> {
-    vec![]
+    /// Schema used when a tool declares no parameters: an empty object.
+    pub fn empty_json_schema() -> Value {
+        serde_json::json!({ "type": "object", "properties": {} })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -181,95 +171,13 @@ impl Tool {
             parameters: Some(parameters),
         })
     }
-}
 
-#[derive(Clone)]
-pub struct ModelRequestBuilder<'a> {
-    pub model: &'a dyn Model,
-    pub system: Option<String>,
-    pub messages: Option<Vec<Message>>,
-    pub settings: Option<Settings>,
-    pub tools: Option<Vec<Tool>>,
-}
-
-pub struct ModelRequest {
-    pub system: Option<String>,
-    pub messages: Option<Vec<Message>>,
-    pub settings: Option<Settings>,
-    pub tools: Option<Vec<Tool>>,
-}
-
-impl<'a> ModelRequestBuilder<'a> {
-    pub fn new(model: &'a dyn Model) -> Self {
-        ModelRequestBuilder {
-            model,
-            system: None,
-            messages: None,
-            settings: None,
-            tools: None,
-        }
-    }
-
-    pub fn with_system(&mut self, system: String) -> &mut Self {
-        self.system = Some(system);
-        return self;
-    }
-
-    pub fn with_message(&mut self, message: Message) -> &mut Self {
-        match &mut self.messages {
-            None => self.messages = Some(vec![message]),
-            Some(ms) => ms.push(message),
-        }
-        return self;
-    }
-
-    pub fn with_messages(&mut self, messages: Vec<Message>) -> &mut Self {
-        match &mut self.messages {
-            None => self.messages = Some(messages),
-            Some(ms) => ms.extend(messages),
-        }
-        return self;
-    }
-
-    pub fn with_settings(&mut self, settings: Settings) -> &mut Self {
-        self.settings = Some(settings);
-        return self;
-    }
-
-    pub fn with_tool(&mut self, tool: Tool) -> &mut Self {
-        match self.tools {
-            None => self.tools = Some(vec![tool]),
-            Some(_) => {
-                self.tools.get_or_insert_with(Vec::new).push(tool);
-            }
-        }
-        return self;
-    }
-
-    pub fn with_tools(&mut self, tools: Vec<Tool>) -> &mut Self {
-        match self.tools {
-            None => self.tools = Some(tools),
-            Some(_) => {
-                self.tools.get_or_insert_with(Vec::new).extend(tools);
-            }
-        }
-        return self;
-    }
-
-    pub async fn completion(&self) -> Result<Completion, Box<dyn Error + Send + Sync>> {
-        self.model.completion(self.to_model_request()).await
-    }
-
-    pub async fn stream(&self) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
-        self.model.stream_completion(self.to_model_request()).await
-    }
-
-    pub fn to_model_request(&self) -> ModelRequest {
-        ModelRequest {
-            system: self.system.clone(),
-            messages: self.messages.clone(),
-            settings: self.settings.clone(),
-            tools: self.tools.clone(),
-        }
+    /// The tool's parameters as standard JSON Schema, or an empty object
+    /// schema when the tool takes no parameters.
+    pub fn parameters_json_schema(&self) -> Value {
+        self.parameters
+            .as_ref()
+            .map(ToolParameters::to_json_schema)
+            .unwrap_or_else(ToolParameters::empty_json_schema)
     }
 }

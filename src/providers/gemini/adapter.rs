@@ -1,12 +1,18 @@
 use crate::{
-    client::{Completion, FunctionCall, MessageType, ModelRequest, Role, StreamEvent, Usage},
-    gemini::types::{
-        Content, FunctionCallPart, FunctionResponsePart, GeminiRequest, GeminiResponse, GeminiTool,
-        GeminiTools, GenerationConfig, Part, SystemInstructionContent, ThinkingConfig,
-    },
-    provider::{BoxError, ProviderAdapter},
+    error::LlmError,
+    provider::ProviderAdapter,
+    request::ModelRequest,
+    types::{Completion, FunctionCall, MessageType, Role, StreamEvent, Usage},
 };
 
+use super::types::{
+    Content, FunctionCallPart, FunctionResponsePart, GeminiRequest, GeminiResponse, GeminiTool,
+    GeminiTools, GenerationConfig, Part, SystemInstructionContent, ThinkingConfig,
+};
+
+/// Pure conversions between the common request/response types and the
+/// Gemini `generateContent` wire format. No I/O. Shared by the direct API
+/// and Vertex AI clients (they differ only in transport).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct GeminiAdapter;
 
@@ -78,12 +84,12 @@ impl ProviderAdapter for GeminiAdapter {
         }
     }
 
-    fn parse_completion(&self, body: &[u8]) -> Result<Completion, BoxError> {
+    fn parse_completion(&self, body: &[u8]) -> Result<Completion, LlmError> {
         let response_body: GeminiResponse = serde_json::from_slice(body)?;
 
         let content = response_body
             .get_text()
-            .ok_or_else(|| -> BoxError { "Missing completion from response".into() })?;
+            .ok_or_else(|| -> LlmError { "Missing completion from response".into() })?;
 
         Ok(Completion {
             completion: content,

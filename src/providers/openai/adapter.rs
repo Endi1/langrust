@@ -1,12 +1,15 @@
 use std::collections::HashMap;
 
 use crate::{
-    client::{Completion, FunctionCall, MessageType, ModelRequest, StreamEvent, Usage},
-    openai::types::{
-        OpenAiInputItem, OpenAiRequest, OpenAiResponse, OpenAiTool, ResponsesStreamEvent,
-        synth_call_id,
-    },
-    provider::{BoxError, ProviderAdapter},
+    error::LlmError,
+    provider::ProviderAdapter,
+    request::ModelRequest,
+    types::{Completion, FunctionCall, MessageType, StreamEvent, Usage},
+};
+
+use super::types::{
+    OpenAiInputItem, OpenAiRequest, OpenAiResponse, OpenAiTool, ResponsesStreamEvent,
+    synth_call_id,
 };
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -29,7 +32,7 @@ impl ProviderAdapter for OpenAiAdapter {
         for m in request.messages.clone().unwrap_or_default().iter() {
             match &m.message_type {
                 MessageType::Text => match m.role {
-                    Some(crate::client::Role::Model) => {
+                    Some(crate::types::Role::Model) => {
                         input.push(OpenAiInputItem::Message {
                             role: "assistant".to_string(),
                             content: m.content.clone(),
@@ -79,7 +82,7 @@ impl ProviderAdapter for OpenAiAdapter {
         }
     }
 
-    fn parse_completion(&self, body: &[u8]) -> Result<Completion, BoxError> {
+    fn parse_completion(&self, body: &[u8]) -> Result<Completion, LlmError> {
         let body: OpenAiResponse = serde_json::from_slice(body)?;
 
         let text = body.get_text();

@@ -1,13 +1,16 @@
 use std::collections::HashMap;
 
 use crate::{
-    claude::types::{
-        BlockDelta, ClaudeMessage, ClaudeRequest, ClaudeResponse, ClaudeTool, ContentBlock,
-        DEFAULT_MAX_TOKENS, ResponseBlock, StreamContentBlock, StreamingEvent, ThinkingConfig,
-        synth_tool_use_id,
-    },
-    client::{Completion, FunctionCall, MessageType, ModelRequest, StreamEvent, Usage},
-    provider::{BoxError, ProviderAdapter},
+    error::LlmError,
+    provider::ProviderAdapter,
+    request::ModelRequest,
+    types::{Completion, FunctionCall, MessageType, StreamEvent, Usage},
+};
+
+use super::types::{
+    BlockDelta, ClaudeMessage, ClaudeRequest, ClaudeResponse, ClaudeTool, ContentBlock,
+    DEFAULT_MAX_TOKENS, ResponseBlock, StreamContentBlock, StreamingEvent, ThinkingConfig,
+    synth_tool_use_id,
 };
 
 /// Pure conversions between the common request/response types and the
@@ -46,7 +49,7 @@ impl ProviderAdapter for ClaudeAdapter {
             .map(|m| match &m.message_type {
                 MessageType::Text => ClaudeMessage {
                     role: match m.role {
-                        Some(crate::client::Role::Model) => "assistant",
+                        Some(crate::types::Role::Model) => "assistant",
                         _ => "user",
                     },
                     content: vec![ContentBlock::Text {
@@ -91,7 +94,7 @@ impl ProviderAdapter for ClaudeAdapter {
         }
     }
 
-    fn parse_completion(&self, body: &[u8]) -> Result<Completion, BoxError> {
+    fn parse_completion(&self, body: &[u8]) -> Result<Completion, LlmError> {
         let body: ClaudeResponse = serde_json::from_slice(body)?;
 
         let mut text = String::new();

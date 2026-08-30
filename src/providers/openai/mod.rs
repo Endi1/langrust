@@ -6,26 +6,26 @@ mod tests;
 
 use async_trait::async_trait;
 
-use crate::provider::{Action, BoxError, LlmClient, Transport};
+use crate::error::LlmError;
+use crate::provider::{Action, LlmClient, Transport};
 
-pub use adapter::ClaudeAdapter;
-pub use types::ClaudeModel;
+pub use adapter::OpenAiAdapter;
+pub use types::OpenAiModel;
 
-/// Anthropic Messages API client (API-key auth).
-pub type ClaudeApiModel = LlmClient<ClaudeAdapter, AnthropicTransport>;
+pub type OpenAiApiModel = LlmClient<OpenAiAdapter, OpenAiTransport>;
 
-impl ClaudeApiModel {
-    pub fn new(api_key: impl Into<String>, model: ClaudeModel) -> Self {
+impl OpenAiApiModel {
+    pub fn new(api_key: impl Into<String>, model: OpenAiModel) -> Self {
         Self::with_client(api_key, model, reqwest::Client::new())
     }
 
     pub fn with_client(
         api_key: impl Into<String>,
-        model: ClaudeModel,
+        model: OpenAiModel,
         client: reqwest::Client,
     ) -> Self {
         LlmClient::from_parts(
-            AnthropicTransport {
+            OpenAiTransport {
                 api_key: api_key.into(),
                 client,
             },
@@ -34,24 +34,23 @@ impl ClaudeApiModel {
     }
 }
 
-pub struct AnthropicTransport {
+pub struct OpenAiTransport {
     pub api_key: String,
     pub client: reqwest::Client,
 }
 
 #[async_trait]
-impl Transport for AnthropicTransport {
+impl Transport for OpenAiTransport {
     async fn send(
         &self,
         _model: &str,
         _action: Action,
         body: serde_json::Value,
-    ) -> Result<reqwest::Response, BoxError> {
+    ) -> Result<reqwest::Response, LlmError> {
         Ok(self
             .client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", self.api_key.clone())
-            .header("anthropic-version", "2023-06-01")
+            .post("https://api.openai.com/v1/responses")
+            .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&body)
             .send()

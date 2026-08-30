@@ -1,4 +1,6 @@
 use super::*;
+use serde_json::Value;
+use std::collections::HashMap;
 use async_trait::async_trait;
 use schemars::JsonSchema;
 
@@ -9,7 +11,7 @@ impl Model for MockModel {
     async fn completion(
         &self,
         _request: ModelRequest,
-    ) -> Result<Completion, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Completion, LlmError> {
         Ok(Completion {
             completion: "test".to_string(),
             usage: Usage {
@@ -24,7 +26,7 @@ impl Model for MockModel {
     async fn stream_completion(
         &self,
         _request: ModelRequest,
-    ) -> Result<StreamResult, Box<dyn Error + Send + Sync>> {
+    ) -> Result<StreamResult, LlmError> {
         use futures::stream;
         Ok(Box::pin(stream::iter(vec![
             StreamEvent::Delta("test".to_string()),

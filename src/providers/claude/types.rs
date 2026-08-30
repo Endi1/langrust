@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::client::Tool;
+use crate::types::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -75,35 +75,11 @@ pub struct ClaudeTool {
 
 impl ClaudeTool {
     pub fn from_tool(tool: &Tool) -> ClaudeTool {
-        // Anthropic accepts standard JSON Schema. If the caller provided
-        // `ToolParameters`, serialize them straight through; otherwise emit
-        // an empty object schema.
-        let input_schema = match &tool.parameters {
-            Some(p) => {
-                let mut map = serde_json::Map::new();
-                map.insert("type".to_string(), Value::String(p._type.clone()));
-                map.insert(
-                    "properties".to_string(),
-                    Value::Object(p.properties.clone().into_iter().collect()),
-                );
-                map.insert(
-                    "required".to_string(),
-                    Value::Array(
-                        p.required
-                            .iter()
-                            .map(|s| Value::String(s.clone()))
-                            .collect(),
-                    ),
-                );
-                Value::Object(map)
-            }
-            None => serde_json::json!({ "type": "object", "properties": {} }),
-        };
-
+        // Anthropic accepts standard JSON Schema unchanged.
         ClaudeTool {
             name: tool.name.clone(),
             description: tool.description.clone(),
-            input_schema,
+            input_schema: tool.parameters_json_schema(),
         }
     }
 }

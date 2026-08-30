@@ -7,7 +7,8 @@ mod tests;
 
 use async_trait::async_trait;
 
-use crate::provider::{Action, BoxError, LlmClient, Transport};
+use crate::error::LlmError;
+use crate::provider::{Action, LlmClient, Transport};
 use gcloud_helpers::get_access_token;
 
 pub use adapter::GeminiAdapter;
@@ -76,7 +77,7 @@ impl Transport for GeminiApiTransport {
         model: &str,
         action: Action,
         body: serde_json::Value,
-    ) -> Result<reqwest::Response, BoxError> {
+    ) -> Result<reqwest::Response, LlmError> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:{}",
             model,
@@ -105,14 +106,14 @@ impl Transport for VertexTransport {
         model: &str,
         action: Action,
         body: serde_json::Value,
-    ) -> Result<reqwest::Response, BoxError> {
+    ) -> Result<reqwest::Response, LlmError> {
         let url = format!(
             "https://aiplatform.googleapis.com/v1/projects/{}/locations/global/publishers/google/models/{}:{}",
             self.project_name,
             model,
             method(action)
         );
-        let access_token = get_access_token().await?;
+        let access_token = get_access_token().await.map_err(LlmError::Auth)?;
         Ok(self
             .client
             .post(url)

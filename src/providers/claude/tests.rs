@@ -5,11 +5,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    claude::{
+    providers::claude::{
         ClaudeApiModel,
         types::{ClaudeModel, ClaudeTool},
     },
-    client::{Message, Model, Settings, StreamEvent, Tool, Usage},
+    request::Model,
+    types::{Message, Settings, StreamEvent, Tool, Usage},
 };
 
 fn make_model(model: ClaudeModel) -> ClaudeApiModel {

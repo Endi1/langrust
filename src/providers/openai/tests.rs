@@ -5,8 +5,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    client::{Message, Model, Settings, StreamEvent, Tool, Usage},
-    openai::{
+    request::Model,
+    types::{Message, Settings, StreamEvent, Tool, Usage},
+    providers::openai::{
         OpenAiApiModel,
         types::{OpenAiModel, OpenAiTool},
     },

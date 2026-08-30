@@ -5,8 +5,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    client::{Message, Model, Settings, StreamEvent, Tool, Usage},
-    gemini::{
+    request::Model,
+    types::{Message, Settings, StreamEvent, Tool, Usage},
+    providers::gemini::{
         GeminiApiModel, GeminiVertexModel,
         adapter::GeminiAdapter,
         types::{GeminiModel, GeminiTool},
@@ -353,7 +354,7 @@ fn response_deserializes_when_content_has_no_parts() {
     // Some Gemini 3.x responses (e.g. thinking-only turns, MAX_TOKENS, safety
     // stops) return a candidate whose `content` has no `parts` field at all.
     // We must not fail to decode in that case.
-    use crate::gemini::types::GeminiResponse;
+    use crate::providers::gemini::types::GeminiResponse;
 
     let raw = r#"{
         "candidates": [
@@ -383,7 +384,7 @@ fn response_with_partial_usage_metadata_reports_missing_counts_as_none() {
     // `promptTokenCount` in `usageMetadata`. Make sure the getters return
     // `None` for the missing counts (callers default them to 0) and the
     // response still decodes.
-    use crate::gemini::types::GeminiResponse;
+    use crate::providers::gemini::types::GeminiResponse;
 
     let raw = r#"{
         "candidates": [
@@ -414,7 +415,7 @@ fn response_with_partial_usage_metadata_reports_missing_counts_as_none() {
 
 #[test]
 fn response_deserializes_when_candidate_has_no_content() {
-    use crate::gemini::types::GeminiResponse;
+    use crate::providers::gemini::types::GeminiResponse;
 
     let raw = r#"{
         "candidates": [
@@ -432,12 +433,12 @@ fn make_direct_dummy(model: GeminiModel) -> GeminiApiModel {
     GeminiApiModel::new("dummy", model)
 }
 
-fn build_body(request: crate::client::ModelRequest) -> crate::gemini::types::GeminiRequest {
+fn build_body(request: crate::request::ModelRequest) -> super::types::GeminiRequest {
     GeminiAdapter.build_body(&request, "gemini-test", false)
 }
 
-fn request_with_thinking(thinking_budget: Option<i16>) -> crate::client::ModelRequest {
-    crate::client::ModelRequest {
+fn request_with_thinking(thinking_budget: Option<i16>) -> crate::request::ModelRequest {
+    crate::request::ModelRequest {
         system: None,
         messages: Some(vec![Message::user("hi".to_string())]),
         settings: Some(Settings {
@@ -470,7 +471,7 @@ fn thinking_config_omitted_when_budget_is_none() {
 
 #[test]
 fn thinking_config_omitted_when_settings_is_none() {
-    let req = crate::client::ModelRequest {
+    let req = crate::request::ModelRequest {
         system: None,
         messages: Some(vec![Message::user("hi".to_string())]),
         settings: None,
