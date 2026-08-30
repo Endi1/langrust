@@ -7,27 +7,25 @@ use serde::{Deserialize, Serialize};
 use crate::{
     client::{Message, Model, Settings, StreamEvent, Tool, Usage},
     gemini::{
-        base::GeminiClient,
-        direct_api_client::GeminiApiModel,
+        GeminiApiModel, GeminiVertexModel,
+        adapter::GeminiAdapter,
         types::{GeminiModel, GeminiTool},
-        vertex_client::GeminiVertexModel,
     },
+    provider::ProviderAdapter,
 };
 
 fn make_direct(model: GeminiModel) -> GeminiApiModel {
-    GeminiApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("GEMINI_KEY").expect("GEMINI_KEY env var must be set"),
+    GeminiApiModel::new(
+        env::var("GEMINI_KEY").expect("GEMINI_KEY env var must be set"),
         model,
-    }
+    )
 }
 
 fn make_vertex(model: GeminiModel) -> GeminiVertexModel {
-    GeminiVertexModel {
-        project_name: env::var("VERTEX_PROJECT").expect("VERTEX_PROJECT env var must be set"),
-        client: reqwest::Client::new(),
+    GeminiVertexModel::new(
+        env::var("VERTEX_PROJECT").expect("VERTEX_PROJECT env var must be set"),
         model,
-    }
+    )
 }
 
 fn default_settings() -> Settings {
@@ -431,11 +429,11 @@ fn response_deserializes_when_candidate_has_no_content() {
 }
 
 fn make_direct_dummy(model: GeminiModel) -> GeminiApiModel {
-    GeminiApiModel {
-        client: reqwest::Client::new(),
-        api_key: "dummy".to_string(),
-        model,
-    }
+    GeminiApiModel::new("dummy", model)
+}
+
+fn build_body(request: crate::client::ModelRequest) -> crate::gemini::types::GeminiRequest {
+    GeminiAdapter.build_body(&request, "gemini-test", false)
 }
 
 fn request_with_thinking(thinking_budget: Option<i16>) -> crate::client::ModelRequest {
@@ -454,8 +452,7 @@ fn request_with_thinking(thinking_budget: Option<i16>) -> crate::client::ModelRe
 
 #[test]
 fn thinking_config_omitted_when_budget_is_none() {
-    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
-    let body = m.create_request_body(request_with_thinking(None));
+    let body = build_body(request_with_thinking(None));
     assert!(
         body.generation_config.thinking_config.is_none(),
         "thinking_config should be omitted when thinking_budget is None"
@@ -473,21 +470,19 @@ fn thinking_config_omitted_when_budget_is_none() {
 
 #[test]
 fn thinking_config_omitted_when_settings_is_none() {
-    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
     let req = crate::client::ModelRequest {
         system: None,
         messages: Some(vec![Message::user("hi".to_string())]),
         settings: None,
         tools: None,
     };
-    let body = m.create_request_body(req);
+    let body = build_body(req);
     assert!(body.generation_config.thinking_config.is_none());
 }
 
 #[test]
 fn thinking_config_set_when_budget_is_some() {
-    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
-    let body = m.create_request_body(request_with_thinking(Some(1024)));
+    let body = build_body(request_with_thinking(Some(1024)));
     let tc = body
         .generation_config
         .thinking_config
@@ -508,8 +503,7 @@ fn thinking_config_set_when_budget_is_some() {
 #[test]
 fn thinking_config_supports_dynamic_budget() {
     // Gemini uses -1 to signal "dynamic thinking". Make sure we pass it through.
-    let m = make_direct_dummy(GeminiModel::Gemini31Pro);
-    let body = m.create_request_body(request_with_thinking(Some(-1)));
+    let body = build_body(request_with_thinking(Some(-1)));
     assert_eq!(
         body.generation_config
             .thinking_config
@@ -536,17 +530,9 @@ fn test_model_name_gemini_api() {
 
 #[test]
 fn test_model_name_gemini_vertex() {
-    let m = GeminiVertexModel {
-        client: reqwest::Client::new(),
-        project_name: "dummy-project".to_string(),
-        model: GeminiModel::Gemini25Flash,
-    };
+    let m = GeminiVertexModel::new("dummy-project", GeminiModel::Gemini25Flash);
     assert_eq!(m.model_name(), "gemini-2.5-flash");
 
-    let m = GeminiVertexModel {
-        client: reqwest::Client::new(),
-        project_name: "dummy-project".to_string(),
-        model: GeminiModel::Gemini31Pro,
-    };
+    let m = GeminiVertexModel::new("dummy-project", GeminiModel::Gemini31Pro);
     assert_eq!(m.model_name(), "gemini-3.1-pro-preview");
 }

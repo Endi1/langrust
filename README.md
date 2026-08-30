@@ -62,8 +62,6 @@ futures = "0.3"
 schemars = "1"        # only needed if you define tools
 serde = { version = "1", features = ["derive"] }
 ```
-de = { version = "1", features = ["derive"] }
-```
 
 Environment variables used by the examples:
 
@@ -83,11 +81,7 @@ use langrust::{ClaudeApiModel, ClaudeModel, Message, Model};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let model = ClaudeApiModel {
-        api_key: std::env::var("ANTHROPIC_API_KEY")?,
-        client: reqwest::Client::new(),
-        model: ClaudeModel::Sonnet4_5,
-    };
+    let model = ClaudeApiModel::new(std::env::var("ANTHROPIC_API_KEY")?, ClaudeModel::Sonnet4_5);
 
     let completion = model
         .new_request()
@@ -111,11 +105,7 @@ use langrust::{Message, Model, OpenAiApiModel, OpenAiModel, Settings};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let model = OpenAiApiModel {
-        api_key: std::env::var("OPENAI_API_KEY")?,
-        client: reqwest::Client::new(),
-        model: OpenAiModel::Gpt5_4Mini,
-    };
+    let model = OpenAiApiModel::new(std::env::var("OPENAI_API_KEY")?, OpenAiModel::Gpt5_4Mini);
 
     let settings = Settings {
         max_tokens: Some(256),
@@ -144,11 +134,7 @@ use langrust::{GeminiApiModel, GeminiModel, Message, Model};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let model = GeminiApiModel {
-        api_key: std::env::var("GEMINI_KEY")?,
-        client: reqwest::Client::new(),
-        model: GeminiModel::Gemini25Flash,
-    };
+    let model = GeminiApiModel::new(std::env::var("GEMINI_KEY")?, GeminiModel::Gemini25Flash);
 
     let history = vec![
         Message::user("What is the capital of Japan?".to_string()),
@@ -177,11 +163,7 @@ use langrust::{GeminiModel, GeminiVertexModel, Message, Model};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let model = GeminiVertexModel {
-        project_name: std::env::var("VERTEX_PROJECT")?,
-        client: reqwest::Client::new(),
-        model: GeminiModel::Gemini31Pro,
-    };
+    let model = GeminiVertexModel::new(std::env::var("VERTEX_PROJECT")?, GeminiModel::Gemini31Pro);
 
     let completion = model
         .new_request()
@@ -205,11 +187,7 @@ use langrust::{ClaudeApiModel, ClaudeModel, Message, Model, StreamEvent};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let model = ClaudeApiModel {
-        api_key: std::env::var("ANTHROPIC_API_KEY")?,
-        client: reqwest::Client::new(),
-        model: ClaudeModel::Sonnet4_5,
-    };
+    let model = ClaudeApiModel::new(std::env::var("ANTHROPIC_API_KEY")?, ClaudeModel::Sonnet4_5);
 
     let mut stream = model
         .new_request()
@@ -250,11 +228,7 @@ struct GetWeatherArgs {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let model = OpenAiApiModel {
-        api_key: std::env::var("OPENAI_API_KEY")?,
-        client: reqwest::Client::new(),
-        model: OpenAiModel::Gpt5_4,
-    };
+    let model = OpenAiApiModel::new(std::env::var("OPENAI_API_KEY")?, OpenAiModel::Gpt5_4);
 
     let tool = Tool::new("get_weather", "Fetch the current weather for a city.")
         .with_parameter::<GetWeatherArgs>()?;
@@ -294,6 +268,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 The same `Tool` value can be passed to `ClaudeApiModel`, `GeminiApiModel` or
 `GeminiVertexModel` — the schema is translated automatically (including
 Gemini's uppercase type names and nullable-handling).
+
+## Architecture
+
+Every client is the generic `LlmClient<A, T>` composed from two small traits:
+
+- `ProviderAdapter` (`A`) — pure request/response conversions for one wire
+  format (no I/O): `ClaudeAdapter`, `OpenAiAdapter`, `GeminiAdapter`.
+- `Transport` (`T`) — endpoint + authentication (only I/O): e.g.
+  `AnthropicTransport`, `OpenAiTransport`, `GeminiApiTransport`, `VertexTransport`.
+
+`Model` is implemented once for `LlmClient`, and the public client types are
+aliases such as `type ClaudeApiModel = LlmClient<ClaudeAdapter, AnthropicTransport>`.
+Direct Gemini and Vertex AI share `GeminiAdapter` and differ only in transport.
+To use a custom `reqwest::Client`, call the `with_client` constructors; to add
+a new backend, implement `Transport` (new auth/endpoint for an existing wire
+format) or `ProviderAdapter` + `Transport` (entirely new provider).
 
 ## Core types cheat-sheet
 

@@ -6,18 +6,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     claude::{
-        direct_api_client::ClaudeApiModel,
+        ClaudeApiModel,
         types::{ClaudeModel, ClaudeTool},
     },
     client::{Message, Model, Settings, StreamEvent, Tool, Usage},
 };
 
 fn make_model(model: ClaudeModel) -> ClaudeApiModel {
-    ClaudeApiModel {
-        client: reqwest::Client::new(),
-        api_key: env::var("CLAUDE_KEY").expect("CLAUDE_KEY env var must be set"),
+    ClaudeApiModel::new(
+        env::var("CLAUDE_KEY").expect("CLAUDE_KEY env var must be set"),
         model,
-    }
+    )
 }
 
 fn default_settings() -> Settings {
@@ -345,24 +344,12 @@ fn test_claude_tool_emits_required_and_name_and_description() {
 
 #[test]
 fn test_model_name_claude_api() {
-    let m = ClaudeApiModel {
-        client: reqwest::Client::new(),
-        api_key: "dummy-key".to_string(),
-        model: ClaudeModel::Sonnet4_5,
-    };
+    let m = ClaudeApiModel::new("dummy-key", ClaudeModel::Sonnet4_5);
     assert_eq!(m.model_name(), "claude-sonnet-4-5");
 
-    let m = ClaudeApiModel {
-        client: reqwest::Client::new(),
-        api_key: "dummy-key".to_string(),
-        model: ClaudeModel::Opus4_6,
-    };
+    let m = ClaudeApiModel::new("dummy-key", ClaudeModel::Opus4_6);
     assert_eq!(m.model_name(), "claude-opus-4-6");
 
-    let m = ClaudeApiModel {
-        client: reqwest::Client::new(),
-        api_key: "dummy-key".to_string(),
-        model: ClaudeModel::Opus4_7,
-    };
+    let m = ClaudeApiModel::new("dummy-key", ClaudeModel::Opus4_7);
     assert_eq!(m.model_name(), "claude-opus-4-7");
 }

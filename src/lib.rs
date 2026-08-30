@@ -2,6 +2,7 @@ pub mod claude;
 pub mod client;
 pub mod gemini;
 pub mod openai;
+pub mod provider;
 
 pub use claude::{ClaudeApiModel, ClaudeModel};
 pub use client::{
@@ -9,3 +10,4 @@ pub use client::{
 };
 pub use gemini::{GeminiApiModel, GeminiModel, GeminiVertexModel};
 pub use openai::{OpenAiApiModel, OpenAiModel};
+pub use provider::{Action, LlmClient, ProviderAdapter, Transport};
